@@ -1,0 +1,29 @@
+#!/usr/bin/env bash
+# =============================================================
+# The name on a commit is never an AI's.
+# The commit-msg hook guards the message. This guards the author and
+# committer lines, which GitHub prints beside every commit.
+# =============================================================
+set -euo pipefail
+
+banned='claude|anthropic|copilot|chatgpt|openai|gpt-[0-9]|\bAI\b'
+
+for who in AUTHOR COMMITTER; do
+  ident=$(git var "GIT_${who}_IDENT")
+  if printf '%s' "$ident" | grep -qiE "$banned"; then
+    echo "" >&2
+    echo "  REFUSED. The ${who,,} on this commit names an AI." >&2
+    echo "" >&2
+    echo "    $ident" >&2
+    echo "" >&2
+    echo "  Set the identity this repository uses:" >&2
+    echo "" >&2
+    echo "    git config user.name  'stockporttruckcentre'" >&2
+    echo "    git config user.email '285980222+stockporttruckcentre@users.noreply.github.com'" >&2
+    echo "" >&2
+    echo "  That address is the one GitHub generates for the account." >&2
+    echo "  It carries no personal email and no AI vendor's domain." >&2
+    echo "" >&2
+    exit 1
+  fi
+done

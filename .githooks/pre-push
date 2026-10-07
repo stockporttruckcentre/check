@@ -1,0 +1,70 @@
+#!/usr/bin/env bash
+# =============================================================
+# Nothing reaches GitHub carrying an AI's name.
+#
+# The other two hooks guard a commit as it is made, and both can be
+# walked around with --no-verify, an amend or a rebase. Pushing is the
+# moment something becomes visible to other people, so this reads every
+# commit about to leave the machine and refuses the push if any of them
+# names an AI in the message, the author or the committer, or if a new
+# branch is named after one.
+# =============================================================
+set -euo pipefail
+
+banned='claude|anthropic|co-authored-by|generated with|copilot|chatgpt|openai|gpt-[0-9]|\bAI\b'
+zero='0000000000000000000000000000000000000000'
+bad=0
+
+while read -r local_ref local_sha remote_ref remote_sha; do
+  [ "$local_sha" = "$zero" ] && continue          # a deletion, nothing to read
+
+  # A branch named after an AI is visible on the branch list and in
+  # every pull request. Refuse a new one. Leave an existing one alone.
+  short_remote=${remote_ref#refs/heads/}
+  if printf '%s' "$short_remote" | grep -qiE "$banned"; then
+    if [ "$remote_sha" = "$zero" ]; then
+      echo "" >&2
+      echo "  REFUSED. The branch name itself names an AI: $short_remote" >&2
+      echo "  Rename it:  git branch -m <new-name>" >&2
+      bad=1
+      continue
+    fi
+  fi
+
+  # Only what is genuinely new.
+  if [ "$remote_sha" = "$zero" ]; then
+    range=$(git rev-list "$local_sha" --not --remotes=origin)
+  else
+    range=$(git rev-list "${remote_sha}..${local_sha}")
+  fi
+  [ -z "$range" ] && continue
+
+  for sha in $range; do
+    # A path inside this repository is not a credit: CLAUDE.md is a file
+    # here and .claude/ is a folder here.
+    subject=$(git log -1 --format='%B' "$sha" \
+      | sed -e 's/CLAUDE\.md//g' -e 's#\.claude/[A-Za-z0-9._/-]*##g')
+    ident=$(git log -1 --format='%an <%ae> / %cn <%ce>' "$sha")
+
+    if printf '%s' "$subject" | grep -qiE "$banned"; then
+      echo "" >&2
+      echo "  REFUSED. $(git log -1 --format='%h' "$sha") has an AI name in its message." >&2
+      printf '%s' "$subject" | grep -inE "$banned" | sed 's/^/      /' >&2
+      bad=1
+    fi
+    if printf '%s' "$ident" | grep -qiE "$banned"; then
+      echo "" >&2
+      echo "  REFUSED. $(git log -1 --format='%h' "$sha") has an AI name on it." >&2
+      echo "      $ident" >&2
+      bad=1
+    fi
+  done
+done
+
+if [ "$bad" -ne 0 ]; then
+  echo "" >&2
+  echo "  Nothing in this repository says who or what wrote it." >&2
+  echo "  Nothing has been pushed. Fix the commits above and push again." >&2
+  echo "" >&2
+  exit 1
+fi

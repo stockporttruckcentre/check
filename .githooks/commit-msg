@@ -1,0 +1,27 @@
+#!/usr/bin/env bash
+# =============================================================
+# Nothing in a commit message says who or what wrote it.
+# Carried over from the STC dashboard repository, where the same rule applies.
+# =============================================================
+set -euo pipefail
+msg_file="$1"
+
+banned='claude|anthropic|co-authored-by|generated with|\bAI\b|copilot|chatgpt|openai|gpt-[0-9]'
+
+# A path inside this repository is not a credit. CLAUDE.md is a file
+# here and .claude/ is a folder here, so a message naming either is
+# describing the repository, not signing the work. Both are removed
+# before the message is scanned.
+scan=$(sed -e 's/CLAUDE\.md//g' -e 's#\.claude/[A-Za-z0-9._/-]*##g' "$msg_file")
+
+if printf '%s' "$scan" | grep -qiE "$banned"; then
+  echo "" >&2
+  echo "  REFUSED. This commit message names an AI author." >&2
+  echo "" >&2
+  printf '%s' "$scan" | grep -inE "$banned" | sed 's/^/    /' >&2
+  echo "" >&2
+  echo "  Take those lines out and commit again." >&2
+  echo "  Nothing in this repository says who or what wrote it." >&2
+  echo "" >&2
+  exit 1
+fi
