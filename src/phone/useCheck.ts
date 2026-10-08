@@ -8,7 +8,7 @@ import { uuid } from '../lib/ids';
 import { photoFileName } from '../lib/check';
 import type { Taken } from './Camera';
 import type { SaveState } from '../kit/kit';
-import { kick } from '../lib/sync';
+import { kick, syncDraftSoon } from '../lib/sync';
 
 const urls = new Map<string, string>();
 
@@ -46,7 +46,7 @@ export function useCheck(id: string | undefined) {
     latest.current = next;
     setCheck(next);
     setSave('saving');
-    try { await db.checks.put(next); setSave('saved'); } catch { setSave('fail'); }
+    try { await db.checks.put(next); setSave('saved'); if (next.status === 'draft') syncDraftSoon(next.id); } catch { setSave('fail'); }
   }, []);
 
   /** Saves a photo the camera has just taken, named by the app (README, File naming). */

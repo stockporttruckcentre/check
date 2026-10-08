@@ -6,7 +6,7 @@
    - The server ignores repeats, because the check's id is made on the phone. */
 import { useSyncExternalStore } from 'react';
 import type { SupabaseClient } from '@supabase/supabase-js';
-import { db, kvGet, kvSet, type DeviceUser, type LastCheck } from './db';
+import { db, kvGet, kvSet, type DeviceUser, type LastCheck, type PhotoRow } from './db';
 import { supabase } from './supabase';
 import { clientFor, getSession } from './session';
 import { getConfig, refreshConfig } from './config';
@@ -66,12 +66,13 @@ function row(c: Check, status: 'waiting' | 'draft' | 'reopened') {
   };
 }
 
-async function sendOne(c: Check, sb: SupabaseClient, u: DeviceUser) {
-  setProgress(c.id, { error: null, done: false });
+/* The details, the damage marks and each photo. Used by a send, and by an unfinished check
+   saving itself to the office as it goes so another device can carry it on. */
+async function pushParts(c: Check, sb: SupabaseClient, status: 'waiting' | 'draft' | 'reopened', track: boolean) {
   /* 1. The details. */
-  const r1 = await sb.from('checks').upsert(row(c, 'waiting'));
+  const r1 = await sb.from('checks').upsert(row(c, status));
   if (r1.error) throw r1.error;
-  setProgress(c.id, { details: true, signature: !!c.signature });
+  if (track) setProgress(c.id, { details: true, signature: !!c.signature });
   /* 2. The damage marks. */
   if (c.pins.length) {
     const pins = c.pins.map((p) => ({ id: p.id, check_id: c.id, number: p.number, view: p.view, x: p.x, y: p.y, zone: p.zone, type: p.type, note: p.note, status: p.status, previous_pin_id: p.previousPinId || null, item_id: p.itemId || null, removed_at: p.removedAt || null }));
@@ -83,22 +84,27 @@ async function sendOne(c: Check, sb: SupabaseClient, u: DeviceUser) {
   const live = photos.filter((p) => !p.removedAt);
   const general = live.filter((p) => p.section !== 'D'), dmg = live.filter((p) => p.section === 'D');
   let g = general.filter((p) => p.uploadedAt).length, d = dmg.filter((p) => p.uploadedAt).length;
-  setProgress(c.id, { photos: [g, general.length], damage: [d, dmg.length] });
+  if (track) setProgress(c.id, { photos: [g, general.length], damage: [d, dmg.length] });
   for (const p of live) {
     if (p.uploadedAt) continue;
     const path = c.id + '/' + p.fileName;
     const up = await sb.storage.from('checks').upload(path, p.blob, { contentType: 'image/jpeg', upsert: true });
     if (up.error && !/exists|duplicate/i.test(up.error.message)) throw up.error;
     const r3 = await sb.from('photos').upsert({ id: p.id, check_id: c.id, section: p.section, ref_id: p.refId, shot: p.shot, file_name: p.fileName, path,
-      bytes: p.bytes, width: p.width, height: p.height, taken_at: p.takenAt, lat: p.lat, lng: p.lng, from_gallery: p.fromGallery });
+      bytes: p.bytes, width: p.width, height: p.height, taken_at: p.takenAt, lat: p.lat, lng: p.lng, from_gallery: p.fromGallery, removed_at: null });
     if (r3.error) throw r3.error;
     await db.photos.update(p.id, { uploadedAt: new Date().toISOString() });
     if (p.section === 'D') d++; else g++;
-    setProgress(c.id, { photos: [g, general.length], damage: [d, dmg.length] });
+    if (track) setProgress(c.id, { photos: [g, general.length], damage: [d, dmg.length] });
   }
-  /* Photos removed after an earlier partial send are marked removed on the server too. */
+  /* Photos removed after they reached the office are marked removed there too. */
   const removed = photos.filter((p) => p.removedAt && p.uploadedAt);
   for (const p of removed) await sb.from('photos').update({ removed_at: p.removedAt }).eq('id', p.id);
+}
+
+async function sendOne(c: Check, sb: SupabaseClient, u: DeviceUser) {
+  setProgress(c.id, { error: null, done: false });
+  await pushParts(c, sb, 'waiting', true);
   /* 4. The office confirms, and gives the reference. */
   const fin = await sb.rpc('finalize_check', { p_id: c.id });
   if (fin.error) throw fin.error;
@@ -114,13 +120,25 @@ export async function queueSend(c: Check) {
   kick();
 }
 
-/** Saves an unfinished check to the office too, so a site lead can see it (README roles). Best effort. */
-export async function pushDraft(c: Check) {
+/** An unfinished check saves itself to the office a moment after each change, photos and all,
+    so the same person can carry it on from another device, and a site lead can see it. */
+const draftTimers: Record<string, ReturnType<typeof setTimeout>> = {};
+export function syncDraftSoon(id: string) {
+  clearTimeout(draftTimers[id]);
+  draftTimers[id] = setTimeout(() => { delete draftTimers[id]; void syncDraft(id); }, 1500);
+}
+async function syncDraft(id: string) {
   if (!navigator.onLine) return;
+  const c = await db.checks.get(id);
+  if (!c || c.status !== 'draft') return;
   const u = await db.users.get(c.userId);
   if (!u?.session) return;
-  try { await (await clientFor(u)).from('checks').upsert(row(c, c.parentId ? 'reopened' : 'draft')); } catch { /* it will go with the send */ }
+  try {
+    await pushParts(c, await clientFor(u), c.parentId ? 'reopened' : 'draft', false);
+    await db.checks.update(id, { syncedAt: new Date().toISOString() });
+  } catch { /* it tries again on the next change, and goes with the send anyway */ }
 }
+export async function pushDraft(c: Check) { syncDraftSoon(c.id); }
 
 /* ---------------- Keeping the phone's copies fresh ---------------- */
 async function fetchAll<T>(sb: SupabaseClient, table: string, select: string): Promise<T[]> {
@@ -150,14 +168,49 @@ export async function pullLastChecks() {
   await db.transaction('rw', db.lastChecks, async () => { await db.lastChecks.clear(); await db.lastChecks.bulkPut(rows); });
 }
 
-/** A check reopened in the office comes to the phone of the person who reopened it. */
-export async function pullReopened() {
+/** Your unfinished checks, wherever you started them, and a check reopened in the office for you.
+    A newer copy wins. One finished or deleted on another device is brought up to date here. */
+export async function pullMine() {
   const u = getSession().user;
   if (!u) return;
-  const { data } = await supabase.from('checks').select('id, data, status').eq('person_id', u.personId).eq('status', 'reopened');
+  const { data } = await supabase.from('checks').select('id, data, status').eq('person_id', u.personId).in('status', ['draft', 'reopened']);
+  const now = new Date().toISOString();
   for (const r of data || []) {
-    if (await db.checks.get(r.id)) continue;
-    await db.checks.put({ ...(r.data as Check), id: r.id, status: 'draft', userId: u.personId });
+    const remote = r.data as Check;
+    const local = await db.checks.get(r.id);
+    if (local && local.status !== 'draft') continue;
+    if (local && (local.updatedAt || '') >= (remote.updatedAt || '')) continue;
+    if (local && draftTimers[r.id]) continue;   // this device has a change on its way
+    await db.checks.put({ ...remote, id: r.id, status: 'draft', userId: u.personId, syncedAt: now });
+    await pullPhotos(r.id);
+  }
+  /* Changes made here with no signal go up now. */
+  const behind = await db.checks.filter((c) => c.status === 'draft' && c.userId === u.personId && (!c.syncedAt || c.syncedAt < c.updatedAt)).toArray();
+  behind.forEach((c) => syncDraftSoon(c.id));
+  /* Drafts here that the office had: finished or deleted somewhere else? */
+  const mine = await db.checks.filter((c) => c.status === 'draft' && c.userId === u.personId && !!c.syncedAt).toArray();
+  if (!mine.length) return;
+  const { data: there, error } = await supabase.from('checks').select('id, status, ref, sent_at, data').in('id', mine.map((c) => c.id));
+  if (error) return;
+  const byId = new Map((there || []).map((x) => [x.id as string, x]));
+  for (const c of mine) {
+    const x = byId.get(c.id);
+    if (!x) { await db.photos.where('checkId').equals(c.id).modify({ removedAt: now }); await db.checks.delete(c.id); continue; }
+    if (x.status === 'sent') await db.checks.put({ ...(x.data as Check), id: c.id, status: 'sent', ref: x.ref, sentAt: x.sent_at, userId: u.personId });
+  }
+}
+async function pullPhotos(checkId: string) {
+  const { data } = await supabase.from('photos').select('*').eq('check_id', checkId);
+  const here = new Map((await db.photos.where('checkId').equals(checkId).toArray()).map((p) => [p.id, p]));
+  for (const p of data || []) {
+    const mine = here.get(p.id);
+    if (p.removed_at) { if (mine && !mine.removedAt) await db.photos.update(p.id, { removedAt: p.removed_at }); continue; }
+    if (mine && mine.fileName === p.file_name && mine.uploadedAt) continue;
+    const dl = await supabase.storage.from('checks').download(p.path);
+    if (dl.error || !dl.data) continue;
+    const photo: PhotoRow = { id: p.id, checkId, section: p.section, refId: p.ref_id, shot: p.shot, fileName: p.file_name, bytes: p.bytes || dl.data.size,
+      width: p.width || 0, height: p.height || 0, takenAt: p.taken_at, lat: p.lat, lng: p.lng, uploadedAt: p.uploaded_at, fromGallery: p.from_gallery, removedAt: null, blob: dl.data };
+    await db.photos.put(photo);
   }
 }
 
@@ -171,7 +224,7 @@ export async function pullAll() {
   if (!navigator.onLine || !getSession().user || state.pulling) return;
   set({ pulling: true, error: null });
   try {
-    await Promise.all([refreshConfig(), pullTrailers(), pullLastChecks(), pullReopened(), pullPeople()]);
+    await Promise.all([refreshConfig(), pullTrailers(), pullLastChecks(), pullMine(), pullPeople()]);
     set({ lastPull: Date.now() });
   } catch (e) { set({ error: (e as Error).message }); }
   finally { set({ pulling: false }); }

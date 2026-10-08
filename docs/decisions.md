@@ -37,6 +37,9 @@ pack does not say and something had to be built. Each one can be changed.
 - **Same way twice.** If the last check the app has for a trailer went the same way (out then out, or in then in), it asks first: "{trailer} was checked out on {date} at {time}", "By {name}, ref {ref}. It hasn't been checked in since.", "Carry on only if this is a new check out. The office will see it flagged." Trailers the app has no history for are not asked about. Built from the same sheet.
 - **Flags on the office record.** The record shows a "Flagged on the phone" card listing what the phone flagged. The PDF does not, because the pack's PDF has no place for it; the CSV in the zip does.
 
+- **Camera not ready.** If the shutter is pressed before the camera has sent a picture, the camera says "The camera wasn't ready. Wait a second and take it again." A gallery photo that will not open says "That photo couldn't be opened. Pick another or take one." Both show on the camera screen in the pack's red, instead of a phone pop-up.
+- **Unfinished checks follow the person.** An unfinished check saves itself to the office a moment after each change, photos included, so the same person can carry it on from any device they sign in on. The newer copy wins if both are changed.
+
 ## Numbers chosen because the pack gives none
 
 - Blur check: Laplacian variance under 25 on the 400px copy. Dark: mean brightness under 40 of 255. Near copy: 8% of a 64 bit difference hash.

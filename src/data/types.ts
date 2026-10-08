@@ -84,6 +84,8 @@ export interface Check {
   readingNotes: Record<string, string>; straps: number | null; seal: string; doorsLock: boolean; cleanliness: string | null;
   signature: string | null; signedAt: string | null; notes: string;
   createdAt: string; updatedAt: string; sentAt: string | null; currentStep: string | null; corrections: { at: string; by: string; text: string }[];
+  /** When the office last had this unfinished check, so another device can carry it on. */
+  syncedAt?: string | null;
   reopenReason?: string | null;
   tried?: boolean;   // somebody has tried to send: missing rows turn red (source/03 S_status)
 }
