@@ -33,8 +33,8 @@ export const rateShort = (c: Check) => (pounds(c.ratePerWeek) ? pounds(c.ratePer
 /** "£145 per week" in the email. */
 export const rateLong = (c: Check) => (pounds(c.ratePerWeek) ? pounds(c.ratePerWeek) + ' per week' : '');
 
-/** "C10772 / STC 4418" */
-export const assetShort = (c: Check) => (c.cNo ? c.cNo + ' / ' : '') + stcLabel(c.stcNo);
+/** "STC 4418 / C10772": the stock number first, from the business. */
+export const assetShort = (c: Check) => stcLabel(c.stcNo) + (c.cNo ? ' / ' + c.cNo : '');
 /** "BOR001 / 4471" */
 export const accountOrder = (c: Check) => [c.accountNo, c.orderNo].filter((x) => x && x.trim()).join(' / ');
 

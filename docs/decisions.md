@@ -40,6 +40,8 @@ pack does not say and something had to be built. Each one can be changed.
 - **Camera not ready.** If the shutter is pressed before the camera has sent a picture, the camera says "The camera wasn't ready. Wait a second and take it again." A gallery photo that will not open says "That photo couldn't be opened. Pick another or take one." Both show on the camera screen in the pack's red, instead of a phone pop-up.
 - **Unfinished checks follow the person.** An unfinished check saves itself to the office a moment after each change, photos included, so the same person can carry it on from any device they sign in on. The newer copy wins if both are changed.
 
+- **The PDF is one page, by instruction from the business**, replacing the pack's page 1 plus following pages. In order: the navy band with the STC logo and the STC number; the details grid with the asset as STC number then C number; the readings in the same cells; general checks in two columns with a tick, cross or dash, beside a top-down tyre diagram (red at or under the legal limit, amber at or under the low tread warning); the damage drawings (nearside and offside always, front, rear and roof smaller when marked) and the damage table; the signature row. Rules are thinner and lighter than the pack's BD. A check with a lot of damage carries the table onto a second page.
+
 ## Numbers chosen because the pack gives none
 
 - Blur check: Laplacian variance under 25 on the 400px copy. Dark: mean brightness under 40 of 255. Near copy: 8% of a 64 bit difference hash.
