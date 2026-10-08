@@ -75,6 +75,7 @@ export const DEFAULT_CONFIG: Config = {
   /* BUILDER: zones follow the lines already in the pack's drawings (the panel lines at
      x 170, 320 and 470, the chassis at y 150, the wheels from x 454). Coordinates are
      fractions of the 640 by 220 drawing. First match wins. */
+  /* Rear and front zones narrowed with their drawings (END_SCALE 0.55 about the middle), from the business. */
   zones: {
     ns: [
       { name: 'landing gear', x0: 0.19, y0: 0.68, x1: 0.28, y1: 1 },
@@ -93,16 +94,16 @@ export const DEFAULT_CONFIG: Config = {
       { name: 'rear panel', x0: 0.03, y0: 0, x1: 0.266, y1: 0.68 },
     ],
     rear: [
-      { name: 'left lamp', x0: 0.31, y0: 0.62, x1: 0.4, y1: 0.78 },
-      { name: 'right lamp', x0: 0.6, y0: 0.62, x1: 0.69, y1: 0.78 },
-      { name: 'under run', x0: 0.31, y0: 0.78, x1: 0.69, y1: 1 },
-      { name: 'left door', x0: 0.2, y0: 0, x1: 0.5, y1: 0.62 },
-      { name: 'right door', x0: 0.5, y0: 0, x1: 0.8, y1: 0.62 },
+      { name: 'left lamp', x0: 0.395, y0: 0.62, x1: 0.445, y1: 0.78 },
+      { name: 'right lamp', x0: 0.555, y0: 0.62, x1: 0.605, y1: 0.78 },
+      { name: 'under run', x0: 0.395, y0: 0.78, x1: 0.605, y1: 1 },
+      { name: 'left door', x0: 0.335, y0: 0, x1: 0.5, y1: 0.62 },
+      { name: 'right door', x0: 0.5, y0: 0, x1: 0.665, y1: 0.62 },
     ],
     front: [
-      { name: 'couplings', x0: 0.44, y0: 0.68, x1: 0.56, y1: 0.95 },
-      { name: 'landing gear', x0: 0.3, y0: 0.73, x1: 0.7, y1: 1 },
-      { name: 'front panel', x0: 0.2, y0: 0, x1: 0.8, y1: 0.73 },
+      { name: 'couplings', x0: 0.467, y0: 0.68, x1: 0.533, y1: 0.95 },
+      { name: 'landing gear', x0: 0.39, y0: 0.73, x1: 0.61, y1: 1 },
+      { name: 'front panel', x0: 0.335, y0: 0, x1: 0.665, y1: 0.73 },
     ],
     roof: [
       { name: 'front', x0: 0, y0: 0, x1: 0.27, y1: 1 },
