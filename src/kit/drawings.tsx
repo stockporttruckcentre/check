@@ -9,6 +9,8 @@ export type View = 'ns' | 'os' | 'front' | 'rear' | 'roof';
 export type Drawing = 'trailer' | 'truck' | 'van';
 export const VIEWS: [View, string][] = [['ns', 'Nearside'], ['os', 'Offside'], ['front', 'Front'], ['rear', 'Rear'], ['roof', 'Roof']];
 
+/** How much the pack's rear and front drawings are narrowed to a real trailer end. */
+export const END_SCALE = 0.55;
 export function trailerSVGString(view: View): string {
   const st = 'stroke="' + N + '" stroke-width="3" stroke-linejoin="round"';
   const w = (cx: number) => '<circle cx="' + cx + '" cy="186" r="26" fill="' + N + '"/><circle cx="' + cx + '" cy="186" r="10" fill="#8A919E"/>';
@@ -23,6 +25,10 @@ export function trailerSVGString(view: View): string {
   } else {
     g = '<rect x="20" y="50" width="600" height="120" rx="6" fill="#fff" ' + st + '/>' + [95, 170, 245, 320, 395, 470, 545].map((x) => '<line x1="' + x + '" y1="56" x2="' + x + '" y2="164" stroke="#C9CDD6" stroke-width="2"/>').join('');
   }
+  /* The pack draws the rear and the front 240 wide by 150 high, nearly twice the width of a real
+     trailer's end (2.55m wide by about 2.9m of body). From the business: drawn to a real trailer's
+     proportions, narrowed about the middle. Strokes keep their weight. */
+  if (view === 'rear' || view === 'front') g = '<g transform="translate(320 0) scale(' + END_SCALE + ' 1) translate(-320 0)">' + g.replace(/<(rect|line|path|circle)\b/g, '<$1 vector-effect="non-scaling-stroke"') + '</g>';
   const lbl = (view === 'ns' || view === 'os' || view === 'roof') ? '<text x="' + (view === 'os' ? 600 : 40) + '" y="14" font-family="ui-monospace,monospace" font-size="12" font-weight="700" fill="' + SU + '" text-anchor="' + (view === 'os' ? 'end' : 'start') + '">FRONT</text>' : '';
   return '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 220" width="100%" style="display:block">' + g + lbl + '</svg>';
 }
@@ -58,7 +64,7 @@ export function pin(n: ReactNode, x: number, y: number, k?: PinKind, o: { onPoin
   const interactive = !!(o.onPointerDown || o.onClick);
   return (
     <div onPointerDown={o.onPointerDown} onClick={o.onClick} role={interactive ? 'button' : undefined} aria-label={o.label}
-      style={{ ...css('position:absolute;left:' + x + '%;top:' + y + '%;transform:translate(-50%,-100%);display:flex;flex-direction:column;align-items:center;pointer-events:' + (interactive ? 'auto' : 'none')), touchAction: 'none', cursor: interactive ? 'pointer' : undefined }}>
+      style={{ ...css('position:absolute;left:' + x + '%;top:' + y + '%;transform:translate(-50%,calc(-100% - ' + (s * 0.207).toFixed(1) + 'px));display:flex;flex-direction:column;align-items:center;pointer-events:' + (interactive ? 'auto' : 'none')), touchAction: 'none', cursor: interactive ? 'pointer' : undefined }}>
       {act ? <div style={css('position:absolute;top:-6px;width:' + (s + 24) + 'px;height:' + (s + 24) + 'px;border-radius:50%;border:3px solid rgba(207,36,23,0.35)')} /> : null}
       <div style={css('width:' + s + 'px;height:' + s + 'px;border-radius:50% 50% 50% 0;transform:rotate(-45deg);background:' + (old ? '#8A8F99' : R) + ';border:3px solid #fff;box-shadow:0 3px 8px rgba(9,22,58,0.35);display:flex;align-items:center;justify-content:center')}>
         <span style={css('transform:rotate(45deg);color:#fff;font-family:' + PT + ';font-weight:800;font-size:' + (act ? 17 : 14) + 'px')}>{n}</span>
