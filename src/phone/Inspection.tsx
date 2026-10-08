@@ -98,6 +98,8 @@ export function Hub() {
       {scroll(<>
         {c.reopenReason ? banner('info', 'Reopened: ' + c.reopenReason, 'When you send it, the office gets it as version ' + c.version + '. The original stays on record.') : null}
         {c.flags.notOnSheet ? banner('warn', 'Not on the stock sheet', 'The office will see this flagged.') : null}
+        {c.flags.noStcNumber ? banner('warn', 'No STC number yet', 'The office will see this flagged.') : null}
+        {c.flags.repeat ? banner('warn', (c.direction === 'OUT' ? 'Checked out' : 'Checked in') + ' last time too', 'The office will see this flagged.') : null}
         {x.st.map((s) => (
           <div key={s.id}>{stepRow(s.name, s.id === 'sign' && s.state === 'lock' ? '' : s.sub, s.state, {
             cur: s.id === first?.id,
@@ -219,7 +221,10 @@ export function Photos() {
   const shots = shotsFor(c, cfg), tyres = tyreShots(c);
   const all = [...shots, ...tyres];
   const have = (s: Shot) => photoFor(x.photos, s.section, s.id);
-  const nextMissing = (after?: Shot) => { const i = after ? all.indexOf(after) : -1; return [...all.slice(i + 1), ...all.slice(0, i + 1)].find((s) => !have(s) && s !== after) || null; };
+  /* Shots are made afresh each render, so they are found by what they are, not by which object they are. */
+  const same = (a: Shot, b: Shot) => a.section === b.section && a.id === b.id;
+  const indexOf = (s: Shot) => all.findIndex((x) => same(x, s));
+  const nextMissing = (after?: Shot) => { const i = after ? indexOf(after) : -1; return [...all.slice(i + 1), ...all.slice(0, i + 1)].find((s) => !have(s) && !(after && same(s, after))) || null; };
   const taken = all.filter(have).length;
   const go = (s: StepId | 'review') => nav('/check/' + c.id + '/' + (s === 'review' ? 'review' : STEP_PATH[s]));
   const sent = c.status !== 'draft';
@@ -251,7 +256,7 @@ export function Photos() {
       </>)}
       {tst ? <div style={css('position:fixed;left:16px;right:16px;bottom:110px;z-index:30;max-width:568px;margin:0 auto')}>{toast(tst.k, tst.t)}</div> : null}
       {footer(nextMissing() ? btn('Take photo: ' + nextMissing()!.label, 'p', { ic: 'cam', onClick: () => setCam(nextMissing()) }) : nextButton(x.st, 'photos', go))}
-      {cam ? <Camera title={cam.title} n={(all.indexOf(cam) + 1) + ' OF ' + all.length} guide={cam.guide} frame={cam.frame}
+      {cam ? <Camera title={cam.title} n={(indexOf(cam) + 1) + ' OF ' + all.length} guide={cam.guide} frame={cam.frame}
         review={cam.id === 'nsf' ? 'Is the whole corner in?' : undefined}
         earlier={x.photos.filter((p) => !p.removedAt && p.section !== 'D' && p.refId !== cam.id && hashes[p.id]).map((p) => ({ label: all.find((s) => s.id === p.refId)?.label || '', hash: hashes[p.id] }))}
         onUse={used} onClose={() => setCam(null)} /> : null}

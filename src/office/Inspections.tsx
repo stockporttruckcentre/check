@@ -121,14 +121,14 @@ export default function Inspections({ listOnly }: { listOnly?: boolean }) {
         const inner = (
           <>
             {fleet(fleetTag({ cNo: r.c_no, stcNo: r.stc_no }), 'height:32px;font-size:16px')}
-            <div style={css('flex:1;min-width:0;text-align:left')}>
-              <div style={css('font-weight:700;font-size:15px')}>{r.customer || stcLabel(r.stc_no)}</div>
+            <div style={css('flex:1 1 130px;min-width:0;text-align:left')}>
+              <div style={css('font-weight:700;font-size:15px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis')} title={r.customer || undefined}>{r.customer || stcLabel(r.stc_no)}</div>
               <div style={css('font-size:13px;color:' + MU)}>{dirWord(r.direction)} &middot; {when(stamp(r))}</div>
             </div>
             {rowBadge(r)}
           </>
         );
-        const st = css('display:flex;align-items:center;gap:12px;padding:12px;border-radius:8px;border:' + (on ? 2 : 1) + 'px solid ' + (on ? N : BL) + ';background:' + (on ? N05 : W) + ';color:' + N);
+        const st = css('display:flex;flex-wrap:wrap;align-items:center;gap:12px;padding:12px;border-radius:8px;border:' + (on ? 2 : 1) + 'px solid ' + (on ? N : BL) + ';background:' + (on ? N05 : W) + ';color:' + N);
         return listOnly
           ? <div key={r.id} style={st}>{inner}</div>
           : <button key={r.id} type="button" className="k-tap k-reset" onClick={() => setSel(r.id)} aria-pressed={on} style={{ ...st, width: '100%' }}>{inner}</button>;
@@ -273,6 +273,13 @@ function Record({ row, onChanged, onOpen }: { row: CheckRow; onChanged: () => vo
   if (check.cleanliness) sc.push(<span key="cl">Cleanliness <b>{check.cleanliness}</b></span>);
   if (sc.length) lines.push(<span key="sc">{sc.map((x, i) => <span key={i}>{i ? <> &middot; </> : null}{x}</span>)}<br /></span>);
   if (check.seal) lines.push(<span key="se">Seal <b style={css('font-family:' + MO)}>{check.seal}</b></span>);
+  const f = check.flags || {};
+  const flagLines = [
+    f.notOnSheet ? 'Not on the stock sheet' : '', f.noStcNumber ? 'No STC number on the stock sheet' : '',
+    f.repeat ? (check.direction === 'OUT' ? 'Checked out' : 'Checked in') + ' last time too (' + f.repeat + ')' : '',
+    f.notYourTrailer ? 'Sales rep on the sheet: ' + f.notYourTrailer : '', f.unexpected ? 'Not on a sales order, sold or on hire' : '',
+    f.wrongSite ? 'Stock sheet says ' + f.wrongSite : '', f.motExpired ? 'MOT run out (' + f.motExpired + ')' : '',
+  ].filter(Boolean);
   const card = (t: string, inner: ReactNode, big?: boolean) => (
     <div style={css('background:' + W + ';border:1px solid ' + BL + ';border-radius:8px;padding:16px' + (big ? ';font-size:14px;line-height:1.7' : ''))}>
       <div style={css(big ? 'font-weight:800;font-size:16px;margin-bottom:6px' : 'font-weight:800;margin-bottom:10px')}>{t}</div>{inner}
@@ -287,6 +294,7 @@ function Record({ row, onChanged, onOpen }: { row: CheckRow; onChanged: () => vo
         {card('Damage', <div style={css('padding:10px 0 0;display:grid;grid-template-columns:1fr 1fr;gap:10px')}>{views.map(mini)}</div>)}
         {card('Readings', <>{lines}</>, true)}
       </div>
+      {flagLines.length ? card('Flagged on the phone', <>{flagLines.map((x) => <span key={x}>{x}<br /></span>)}</>, true) : null}
       {corr.length ? card('Corrections', <>{corr.map((x) => <span key={x.id}>{dayMon(x.at)} {time(x.at)} &middot; {personName(look, x.person_id)}: <b>{x.text}</b><br /></span>)}</>, true) : null}
     </>
   );

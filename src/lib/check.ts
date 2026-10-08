@@ -38,10 +38,10 @@ export const motExpired = (t: Trailer | null, now = new Date()) =>
 
 /* ---------------- Names ---------------- */
 
-/** "STC 145746", the way the pack writes an STC number on screen. */
-export const stcLabel = (stcNo: string) => (/^\d+$/.test(stcNo) ? 'STC ' + stcNo : stcNo);
+/** "STC 145746", the way the pack writes an STC number on screen. A trailer with no STC number yet shows the number it has. */
+export const stcLabel = (stcNo: string) => (/^\d+$/.test(stcNo) ? 'STC ' + stcNo : stcNo.replace(/^NOSTC-/, ''));
 /** "STC145746", the way it starts every file name. */
-export const stcFile = (stcNo: string) => (/^\d+$/.test(stcNo) ? 'STC' + stcNo : stcNo.replace(/\s+/g, ''));
+export const stcFile = (stcNo: string) => (/^\d+$/.test(stcNo) ? 'STC' + stcNo : stcNo.replace(/^NOSTC-/, '').replace(/\s+/g, ''));
 /** The number painted on the trailer that the yard reads first: the C number where there is one. */
 export const fleetTag = (c: Pick<Check, 'cNo' | 'stcNo'>) => c.cNo || stcLabel(c.stcNo);
 export const dirWord = (d: 'OUT' | 'IN') => (d === 'OUT' ? 'Check out' : 'Check in');

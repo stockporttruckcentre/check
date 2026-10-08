@@ -64,6 +64,8 @@ export function csvColumns(c: Check, config: Config): [string, unknown][] {
     ['Wrong site', c.flags.wrongSite || ''],
     ['MOT expired', c.flags.motExpired || ''],
     ['Not on stock sheet', c.flags.notOnSheet ? 'Yes' : ''],
+    ['No STC number', c.flags.noStcNumber ? 'Yes' : ''],
+    ['Same as last check', c.flags.repeat || ''],
     ['Signed at', at(c.signedAt)],
     ['Sent at', at(c.sentAt)],
     ['Damage marks by view', (['ns', 'os', 'front', 'rear', 'roof'] as const).map((v) => VIEW_NAMES[v] + ' ' + livePins(c).filter((p) => p.view === v).length).join('; ')],

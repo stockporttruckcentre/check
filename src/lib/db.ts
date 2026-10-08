@@ -4,7 +4,7 @@ import Dexie, { type Table } from 'dexie';
 import type { Check, PhotoMeta, Trailer, Config, SystemSettings, Role, Site, Perms } from '../data/types';
 
 export interface PhotoRow extends PhotoMeta { blob: Blob }
-export interface LastCheck { stc_no: string; check_id: string; direction: string; sent_at: string; readings: Record<string, number | null>; pins: { id: string; view: string; x: number; y: number; zone: string; type: string | null; note: string; since: string }[]; photos: { path: string; ref: string | null; section: string; shot: number }[] }
+export interface LastCheck { stc_no: string; check_id: string; direction: string; sent_at: string; ref?: string | null; person_name?: string | null; readings: Record<string, number | null>; pins: { id: string; view: string; x: number; y: number; zone: string; type: string | null; note: string; since: string }[]; photos: { path: string; ref: string | null; section: string; shot: number }[] }
 export interface DeviceUser {
   personId: string; userId: string; name: string; email: string; roleId: string; roleName: string; siteId: string | null; siteName: string;
   session: { access_token: string; refresh_token: string } | null;

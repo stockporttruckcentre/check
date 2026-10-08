@@ -7,7 +7,7 @@ import { css } from '../kit/css';
 import { btn, footer, scroll, topbar, banner, sheet, stepRow, fleet, sg, kv, ic, saveInd } from '../kit/kit';
 import { N, W, BL, MU, A, G, N05, PT, MO, A1 } from '../kit/tokens';
 import { db, kvGet } from '../lib/db';
-import { findExact, findStarting, findClose, repName, isMine, type Found } from '../lib/trailers';
+import { findExact, findStarting, findClose, repName, isMine, normKey, type Found } from '../lib/trailers';
 import { useSession } from '../lib/session';
 import { useConfig, getConfig } from '../lib/config';
 import { detectType, typeName, stcLabel, tailLiftFitted, rearDoorsFitted, motExpired, dirWord, steps as stepList, percent } from '../lib/check';
@@ -44,10 +44,12 @@ export function ChooseDirection() {
 /* The match card (source/06 trailerMatch), built from the real stock sheet row. */
 export function trailerMatch(f: Found, o: { warn?: boolean; rep?: string | null; mine?: boolean } = {}) {
   const t = f.t;
+  if (t.no_stc) o = { ...o, warn: true };
   const cfg = getConfig().config;
   const type = detectType(t, cfg);
   const axleWord = t.axle_count === 3 ? 'tri axle' : t.axle_count === 2 ? 'tandem axle' : t.axle_count === 1 ? 'single axle' : '';
   const rows: [string, string, string?][] = [];
+  if (t.no_stc) rows.push(['STC number', 'None yet', A]);
   if (t.c_no) rows.push(['C number', t.c_no]);
   if (t.side_aperture) rows.push(['Side aperture', t.side_aperture]);
   if (t.colour) rows.push(['Colour', t.colour]);
@@ -67,9 +69,35 @@ export function trailerMatch(f: Found, o: { warn?: boolean; rep?: string | null;
   );
 }
 
-type Stage = 'find' | 'flags' | 'notmine' | 'dup' | 'notfound';
+/* A typed STC number is kept as the stock sheet keeps it, digits only, so "STC 999123" is not shown as "STC STC 999123". */
+const typedNo = (q: string) => { const v = q.trim().toUpperCase().replace(/\s+/g, ' '); return /^STC\s?\d+$/.test(v) ? v.replace(/\D/g, '') : v; };
 
+type Stage = 'find' | 'flags' | 'notmine' | 'dup' | 'notfound' | 'nostc' | 'again';
+type Gate = 'nostc' | 'again' | 'notmine' | 'flags';
+interface Last { at: string; by: string | null; ref: string | null; direction: Direction }
+
+/** The last check that went off for a trailer, from this phone or the office, whichever is newer. */
+async function lastDone(key: string): Promise<Last | null> {
+  /* "STC 999123", "STC999123" and "999123" are the same trailer. */
+  const k = normKey(key.replace(/^NOSTC-/, ''));
+  const same = (x: string) => normKey(x.replace(/^NOSTC-/, '')) === k;
+  const mine = (await db.checks.filter((c) => same(c.stcNo) && c.status !== 'draft' && !!c.sentAt).toArray())
+    .sort((a, b) => (b.sentAt || '').localeCompare(a.sentAt || ''))[0];
+  const office = (await db.lastChecks.filter((x) => same(x.stc_no)).toArray()).sort((a, b) => b.sent_at.localeCompare(a.sent_at))[0];
+  const a: Last | null = mine ? { at: mine.sentAt!, by: mine.userName, ref: mine.ref, direction: mine.direction } : null;
+  const b: Last | null = office ? { at: office.sent_at, by: office.person_name || null, ref: office.ref || null, direction: office.direction as Direction } : null;
+  if (!a) return b;
+  if (!b) return a;
+  return a.at >= b.at ? a : b;
+}
+
+/* Check out and check in share this screen, so switching between them starts it afresh. */
 export function FindTrailer() {
+  const { dir } = useParams();
+  return <Find key={dir} />;
+}
+
+function Find() {
   const { dir } = useParams();
   const direction: Direction = dir === 'in' ? 'IN' : 'OUT';
   const nav = useNavigate();
@@ -83,6 +111,8 @@ export function FindTrailer() {
   const [pick, setPick] = useState<Found | null>(null);
   const [stage, setStage] = useState<Stage>('find');
   const [dup, setDup] = useState<Check | null>(null);
+  const [passed, setPassed] = useState<Gate[]>([]);
+  const [last, setLast] = useState<Last | null>(null);
   const [typing, setTyping] = useState(false);
   const [people, setPeople] = useState<{ name: string; aliases: string[] }[]>([]);
   const [count, setCount] = useState<number | null>(null);
@@ -119,21 +149,31 @@ export function FindTrailer() {
     return out;
   }
 
-  async function confirm(f: Found | null) {
-    /* Two checks of the same type on one trailer: the second is stopped (source/05 dup). */
-    const key = f ? f.t.stc_no : q.trim().toUpperCase();
-    const open = await db.checks.where('stcNo').equals(key).filter((c) => c.status === 'draft' && c.direction === direction).first();
-    if (open) { setDup(open); setStage('dup'); return; }
+  /* Each question is asked once, in this order, and only if it applies:
+     no STC number yet, already done the same way last time, not your trailer, what the stock sheet flags. */
+  async function confirm(f: Found | null, pass: Gate[] = []) {
+    const key = f ? f.t.stc_no : typedNo(q);
+    if (!pass.length) {
+      /* Two checks of the same type on one trailer: the second is stopped (source/05 dup). */
+      const open = await db.checks.filter((c) => normKey(c.stcNo.replace(/^NOSTC-/, '')) === normKey(key.replace(/^NOSTC-/, '')) && c.status === 'draft' && c.direction === direction).first();
+      if (open) { setDup(open); setStage('dup'); return; }
+    }
+    const done = await lastDone(key);
+    const rep = f ? repName(f.t, direction) : null;
+    const gates: Gate[] = [];
+    if (f?.t.no_stc) gates.push('nostc');
+    /* From the business: a trailer checked out last time should be checked in next, and the other way round. */
+    if (done && done.direction === direction) gates.push('again');
+    if (f && rep && !isMine(rep, me) && config.alerts.notYourTrailer !== false) gates.push('notmine');
+    if (f && flagsFor(f.t).length) gates.push('flags');
+    const next = gates.find((g) => !pass.includes(g));
+    setPassed(pass); setLast(done);
+    if (next) { setStage(next); return; }
     if (!f) { setStage('notfound'); return; }
-    if (stage === 'find') {
-      const rep = repName(f.t, direction);
-      if (rep && !isMine(rep, me) && config.alerts.notYourTrailer !== false) { setStage('notmine'); return; }
-      if (flagsFor(f.t).length) { setStage('flags'); return; }
-    } else if (stage === 'notmine' && flagsFor(f.t).length) { setStage('flags'); return; }
-    await start(f.t, null);
+    await start(f.t, null, done);
   }
 
-  async function start(t: Trailer | null, typedType: TrailerTypeId | null) {
+  async function start(t: Trailer | null, typedType: TrailerTypeId | null, done: Last | null = last) {
     const id = uuid();
     const now = new Date().toISOString();
     const type = typedType || detectType(t, config);
@@ -148,10 +188,12 @@ export function FindTrailer() {
       if (fl.some((x) => x.title.startsWith('Stock sheet says'))) flags.wrongSite = t.location || '';
       if (fl.some((x) => x.title === config.wording.unexpected_out)) flags.unexpected = true;
     } else flags.notOnSheet = true;
+    if (t?.no_stc) flags.noStcNumber = true;
+    if (done && done.direction === direction) flags.repeat = done.ref || done.at;
     const hire = direction === 'OUT' && t?.on_hire && t.hire_customer;
     const c: Check = {
       id, ref: null, userId: user!.personId, userName: user!.name, userRole: user!.roleName, siteId: user!.siteId || '', siteName: site,
-      direction, stcNo: t ? t.stc_no : q.trim().toUpperCase(), cNo: t?.c_no || null, onStockSheet: !!t, trailer: t, trailerType: type,
+      direction, stcNo: t ? t.stc_no : typedNo(q), cNo: t?.c_no || null, onStockSheet: !!t, trailer: t, trailerType: type,
       axles: t?.axle_count || null, tailLift: tailLiftFitted(t), rearDoors: rearDoorsFitted(t),
       customer: (hire ? t!.hire_customer : t?.customer) || '', customerSource: hire ? 'fleet' : t?.customer ? 'stock' : 'typed',
       collectingReg: '', accountNo: '', orderNo: '', ratePerWeek: hire && t!.hire_rate ? '£' + t!.hire_rate : '', rateSource: hire && t!.hire_rate ? 'fleet' : 'typed', replacementValue: '',
@@ -189,6 +231,40 @@ export function FindTrailer() {
     );
   }
 
+  if (stage === 'nostc' && match) {
+    return (
+      <div style={css(screen)}>
+        {bar}
+        {scroll(trailerMatch(match, { warn: true }), 'gap:10px')}
+        {sheet(<>
+          <div style={css('font-family:' + PT + ';font-weight:800;font-size:22px;letter-spacing:-0.02em')}>No STC number yet</div>
+          <div style={css('font-size:16px;line-height:1.45')}>The stock sheet has {stcLabel(match.t.stc_no)}{match.t.tab ? ' on ' + match.t.tab : ''} with no STC number. A trailer usually needs its STC number before it&rsquo;s {direction === 'IN' ? 'checked in' : 'checked out'}.</div>
+          <div style={css('font-size:16px;line-height:1.45')}>Ask the office to add it to the stock sheet, then search again.</div>
+          {btn('Pick another trailer', 'p', { onClick: () => { setStage('find'); setQ(''); setPassed([]); } })}
+          {btn('Carry on without one', 's', { h: 56, onClick: () => confirm(match, [...passed, 'nostc']) })}
+        </>, { onClose: () => { setStage('find'); setPassed([]); }, label: 'No STC number yet' })}
+      </div>
+    );
+  }
+
+  if (stage === 'again' && last) {
+    const shown = match ? (match.t.c_no || stcLabel(match.t.stc_no)) : stcLabel(typedNo(q));
+    const other = direction === 'OUT' ? 'checked in' : 'checked out';
+    return (
+      <div style={css(screen)}>
+        {bar}
+        {scroll(match ? trailerMatch(match, { warn: true }) : <div style={css('height:64px;border-radius:8px;border:3px solid ' + N + ';background:' + W + ';display:flex;align-items:center;padding:0 16px;font-family:' + MO + ';font-weight:800;font-size:26px')}>{q}</div>, 'gap:10px')}
+        {sheet(<>
+          <div style={css('font-family:' + PT + ';font-weight:800;font-size:22px;letter-spacing:-0.02em')}>{shown} was {direction === 'OUT' ? 'checked out' : 'checked in'} on {dayMonYear(last.at)} at {time(last.at)}</div>
+          <div style={css('font-size:16px;line-height:1.45')}>{last.by ? 'By ' + (last.by === user.name ? 'you' : last.by) : 'From this app'}{last.ref ? ', ref ' + last.ref : ''}. It hasn&rsquo;t been {other} since.</div>
+          <div style={css('font-size:16px;line-height:1.45')}>Carry on only if this is a new {dirWord(direction).toLowerCase()}. The office will see it flagged.</div>
+          {btn('Pick another trailer', 'p', { onClick: () => { setStage('find'); setQ(''); setPassed([]); } })}
+          {btn('Carry on anyway', 's', { h: 56, onClick: () => confirm(match, [...passed, 'again']) })}
+        </>, { onClose: () => { setStage('find'); setPassed([]); }, label: 'Already done' })}
+      </div>
+    );
+  }
+
   if (stage === 'notfound' || typing) {
     return (
       <div style={css(screen)}>
@@ -222,8 +298,8 @@ export function FindTrailer() {
           <div style={css('font-size:16px;line-height:1.45;margin-top:8px')}>The stock sheet has {full.split(' ')[0]} as the sales rep for {stcLabel(match.t.stc_no)}. You&rsquo;re signed in as {user.name}.</div>
           <div style={css('font-size:16px;line-height:1.45;margin-top:8px')}>{dirWord(direction).replace('Check', 'Check it')} anyway?</div>
           <div style={css('display:flex;flex-direction:column;gap:10px;margin-top:18px')}>
-            {btn('Yes, carry on', 'p', { onClick: () => confirm(match) })}
-            {btn('Pick another trailer', 's', { onClick: () => { setStage('find'); setQ(''); } })}
+            {btn('Yes, carry on', 'p', { onClick: () => confirm(match, [...passed, 'notmine']) })}
+            {btn('Pick another trailer', 's', { onClick: () => { setStage('find'); setQ(''); setPassed([]); } })}
           </div>
           <div style={css('font-size:13px;color:' + MU + ';margin-top:12px')}>If you carry on, {full.split(' ')[0]} gets a message and it&rsquo;s noted on the record.</div>
         </>, { onClose: () => setStage('find') })}
@@ -236,7 +312,7 @@ export function FindTrailer() {
       <div style={css(screen)}>
         {bar}
         {scroll(<>{flagsFor(match.t).map((f, i) => <div key={i}>{banner(f.k, f.title, f.body)}</div>)}</>, 'gap:10px')}
-        {footer(<>{btn('Carry on anyway', 's', { onClick: () => start(match.t, null) })}{btn('Pick another trailer', 'g', { onClick: () => { setStage('find'); setQ(''); } })}</>)}
+        {footer(<>{btn('Carry on anyway', 's', { onClick: () => confirm(match, [...passed, 'flags']) })}{btn('Pick another trailer', 'g', { onClick: () => { setStage('find'); setQ(''); setPassed([]); } })}</>)}
       </div>
     );
   }

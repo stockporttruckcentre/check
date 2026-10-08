@@ -54,6 +54,8 @@ export interface Trailer {
   customer: string | null; tab: string | null; sold: boolean; on_sales_order: boolean;
   hire_customer: string | null; hire_rate: number | null; on_hire: boolean; hire_salesman: string | null;
   keys: string[]; updated_at?: string;
+  /** On the stock sheet without an STC number yet, as new builds are. stc_no is then NOSTC- and its chassis or C number. */
+  no_stc?: boolean;
 }
 
 export interface DamagePin {
@@ -75,7 +77,7 @@ export interface Check {
   axles: number | null; tailLift: boolean; rearDoors: boolean;
   customer: string; customerSource: 'stock' | 'fleet' | 'typed'; collectingReg: string; accountNo: string; orderNo: string;
   ratePerWeek: string; rateSource: 'fleet' | 'typed'; replacementValue: string;
-  flags: { notYourTrailer?: string; unexpected?: boolean; wrongSite?: string; motExpired?: string; notOnSheet?: boolean };
+  flags: { notYourTrailer?: string; unexpected?: boolean; wrongSite?: string; motExpired?: string; notOnSheet?: boolean; noStcNumber?: boolean; repeat?: string };
   configVersion: number; status: CheckStatus; version: number; parentId: string | null;
   damageAnswer: 'none' | 'yes' | null; pins: DamagePin[]; oldPins: OldPin[]; nextPin: number;
   items: Record<string, ItemAnswer>; tyres: Record<string, Tyre>; readings: Record<string, number | null>;

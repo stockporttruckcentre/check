@@ -143,9 +143,11 @@ export async function pullTrailers() {
 }
 
 export async function pullLastChecks() {
-  const { data, error } = await supabase.rpc('last_checks');
+  const [{ data, error }, by] = await Promise.all([supabase.rpc('last_checks'), supabase.rpc('last_check_by')]);
   if (error) throw error;
-  await db.transaction('rw', db.lastChecks, async () => { await db.lastChecks.clear(); await db.lastChecks.bulkPut((data || []) as LastCheck[]); });
+  const who = new Map(((by.data || []) as { stc_no: string; ref: string | null; person_name: string | null }[]).map((r) => [r.stc_no, r]));
+  const rows = ((data || []) as LastCheck[]).map((r) => ({ ...r, ref: who.get(r.stc_no)?.ref || null, person_name: who.get(r.stc_no)?.person_name || null }));
+  await db.transaction('rw', db.lastChecks, async () => { await db.lastChecks.clear(); await db.lastChecks.bulkPut(rows); });
 }
 
 /** A check reopened in the office comes to the phone of the person who reopened it. */

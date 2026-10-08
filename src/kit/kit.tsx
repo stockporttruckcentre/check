@@ -36,7 +36,10 @@ export function sg(k: string, s?: number) {
   s = s || 28;
   const m = ({ done: [G, W, 'tick', 'circle'], todo: [W, N, null, 'ring'], miss: [R, W, 'alert', 'circle'], warn: [A, W, 'alert', 'circle'], pend: [N5, W, 'clock', 'circle'], off: ['#5B5B56', W, 'off', 'circle'], lock: ['#7A7A74', W, 'lock', 'circle'], na: ['#EFEFEC', SU, 'cross', 'circle'] } as Record<string, (string | null)[]>)[k];
   if (m[3] === 'ring') return <span style={css('flex:none;width:' + s + 'px;height:' + s + 'px;border-radius:50%;border:3px solid ' + N + ';box-sizing:border-box;display:inline-block')} aria-hidden="true" />;
-  return <span style={css('flex:none;width:' + s + 'px;height:' + s + 'px;border-radius:50%;background:' + m[0] + ';color:' + m[1] + ';display:inline-flex;align-items:center;justify-content:center')} aria-hidden="true">{ic(m[2] as string, Math.round(s * 0.62), m[1] as string, 2.8)}</span>;
+  return <span style={css('flex:none;width:' + s + 'px;height:' + s + 'px;border-radius:50%;background:' + m[0] + ';color:' + m[1] + ';display:inline-flex;align-items:center;justify-content:center')} aria-hidden="true">{m[2] === 'alert'
+    /* A triangle carries its weight at the bottom, so centred by its outline it looks low in the circle. Lifted by 2 of its 24 units. */
+    ? <span style={css('display:block;transform:translateY(-' + (Math.round(s * 0.62) * 2 / 24).toFixed(2) + 'px)')}>{ic('alert', Math.round(s * 0.62), m[1] as string, 2.8)}</span>
+    : ic(m[2] as string, Math.round(s * 0.62), m[1] as string, 2.8)}</span>;
 }
 
 export function card(inner: ReactNode, c?: string) {
@@ -94,7 +97,7 @@ export function btn(t: ReactNode, k?: BtnKind, o: BtnOpts = {}) {
       {o.loading
         ? <span style={{ ...css('width:22px;height:22px;border-radius:50%;border:3px solid rgba(255,255,255,0.35);border-top-color:#fff;box-sizing:border-box'), animation: 'k-spin 0.8s linear infinite' }} />
         : (o.ic ? ic(o.ic, 24, s[1], 2.4) : null)}
-      {t}
+      {typeof t === 'string' ? <span style={css('min-width:0;overflow:hidden;white-space:normal;line-height:1.15;text-align:center;max-height:' + (h - 8) + 'px')}>{t}</span> : t}
     </button>
   );
 }
@@ -128,7 +131,7 @@ export function plate(t: ReactNode, s?: number) {
   return <span style={css('display:inline-flex;align-items:center;height:' + (44 * s) + 'px;padding:0 ' + (14 * s) + 'px;border-radius:6px;background:#F7D117;border:2px solid #111;font-family:' + MO + ';font-weight:800;font-size:' + (24 * s) + 'px;letter-spacing:0.06em;color:#111')}>{t}</span>;
 }
 export function fleet(t: ReactNode, c?: string) {
-  return <span style={css('display:inline-flex;align-items:center;height:40px;padding:0 14px;border-radius:6px;background:' + N + ';color:#fff;font-family:' + MO + ';font-weight:800;font-size:22px;letter-spacing:0.04em;' + (c || ''))}>{t}</span>;
+  return <span style={css('display:inline-flex;align-items:center;height:40px;padding:0 14px;border-radius:6px;background:' + N + ';color:#fff;font-family:' + MO + ';font-weight:800;font-size:22px;letter-spacing:0.04em;white-space:nowrap;flex:none;' + (c || ''))}>{t}</span>;
 }
 export interface PhotoOpts { w?: string; ar?: string; bg?: string; st?: string; src?: string; css?: string; onClick?: Click; label?: string }
 export function photo(label: ReactNode, o: PhotoOpts = {}) {
@@ -167,7 +170,9 @@ export function sheet(inner: ReactNode, o: { center?: boolean; onClose?: () => v
     <div role="dialog" aria-modal="true" aria-label={o.label} onClick={o.onClose ? (e) => { if (e.target === e.currentTarget) o.onClose!(); } : undefined}
       style={css('position:fixed;inset:0;z-index:50;background:rgba(9,22,58,0.55);display:flex;flex-direction:column;justify-content:' + (o.center ? 'center' : 'flex-end') + ';padding:' + (o.center ? '0 18px' : '0'))}>
       <div style={css('background:' + W + ';border-radius:' + (o.center ? '16px' : '20px 20px 0 0') + ';padding:' + (o.center ? '24px 20px 20px' : '10px 18px 26px') + ';display:flex;flex-direction:column;gap:12px;max-height:92dvh;overflow-y:auto;width:100%;max-width:560px;margin:0 auto;box-sizing:border-box')}>
-        {o.center ? null : <button type="button" className="k-reset" aria-label="Close" onClick={o.onClose} style={css('width:44px;height:5px;border-radius:3px;background:#CBCBC6;margin:0 auto 8px;border:0;padding:0;flex:none')} />}
+        {o.center ? null : o.onClose
+          ? <button type="button" className="k-reset" aria-label="Close" onClick={o.onClose} style={css('width:44px;height:5px;border-radius:3px;background:#CBCBC6;margin:0 auto 8px;border:0;padding:0;flex:none')} />
+          : <div aria-hidden="true" style={css('width:44px;height:5px;border-radius:3px;background:#CBCBC6;margin:0 auto 8px;flex:none')} />}
         {inner}
       </div>
     </div>
@@ -290,5 +295,5 @@ export function dt(head: ReactNode[], rows: { key: string; cells: ReactNode[]; o
 }
 export function pill(t: ReactNode, k?: 'ok' | 'warn' | 'err' | 'n' | 'g') {
   const m = ({ ok: [G1, G], warn: [A1, A], err: [R1, R7], n: [N05, N], g: ['#EFEFEC', '#43433F'] } as Record<string, string[]>)[k || 'g'];
-  return <span style={css('display:inline-flex;align-items:center;height:26px;padding:0 10px;border-radius:999px;background:' + m[0] + ';color:' + m[1] + ';font-size:12px;font-weight:800;letter-spacing:0.02em;white-space:nowrap')}>{t}</span>;
+  return <span style={css('display:inline-flex;align-items:center;height:26px;padding:0 10px;border-radius:999px;background:' + m[0] + ';color:' + m[1] + ';font-size:12px;font-weight:800;letter-spacing:0.02em;white-space:nowrap;max-width:100%;overflow:hidden;text-overflow:ellipsis')}>{t}</span>;
 }

@@ -10,7 +10,7 @@ import { useSession, NO_PERMS } from '../lib/session';
 import type { Config, ItemDef, ShotDef, StepId, TrailerTypeId, Applies } from '../data/types';
 import { useDraft, editDraft, working, draftNo, flushDraft } from './draft';
 import { PublishButton, DiscardButton } from './Publish';
-import { dh, inp, Field, Choice, dashed, say, need, useRemember } from './ui';
+import { dh, inp, Field, Choice, dashed, say, need, useRemember, useWidth } from './ui';
 
 const ANSWERS: [ItemDef['answer'], string][] = [['ok_dmg_na', 'OK / Damaged / N/A'], ['ok_fault_na', 'OK / Fault / N/A'], ['ok_dmg', 'OK / Damaged']];
 const answerName = (a: ItemDef['answer']) => ANSWERS.find((x) => x[0] === a)?.[1] || a;
@@ -23,7 +23,8 @@ export function typesLabel(types: Partial<Record<TrailerTypeId, Applies>>, cfg: 
   if (on.length === cfg.trailerTypes.length && on.every((t) => types[t.id] === 'yes')) return 'All';
   if (fitted === 'tail_lift' && on.length && on.every((t) => types[t.id] === 'if_fitted')) return 'Tail lift only';
   if (!on.length) return 'None';
-  return on.map((t) => t.name).join(', ');
+  /* A pill holds one short line, so a long list says how many more. */
+  return on.length > 2 ? on[0].name + ' and ' + (on.length - 1) + ' more' : on.map((t) => t.name).join(', ');
 }
 
 /** A fieldset that turns every control inside it off, with the reason as its title. */
@@ -32,6 +33,7 @@ export function Gate({ ok, why, children }: { ok: boolean; why: string; children
 }
 
 export default function Builder() {
+  const wide = useWidth() >= 1240;
   const { user } = useSession();
   const perms = user?.perms || NO_PERMS;
   const can = perms.edit_config;
@@ -162,10 +164,11 @@ export default function Builder() {
         <DiscardButton />
         <PublishButton />
       </>)}
-      <div style={css('display:grid;grid-template-columns:260px minmax(0,1fr) 300px;gap:18px')}>
-        <div>{lab(<>Steps &middot; drag to reorder</>)}{left}</div>
-        <div>{lab(midLabel)}{mid}</div>
-        <div>{right ? <>{lab(cur?.id === 'items' ? 'Edit item' : cur?.id === 'photos' ? 'Edit photo' : 'Edit step')}{right}</> : null}</div>
+      {/* Three columns where there is room. Narrower, the editor goes under the list it edits. */}
+      <div style={css('display:grid;grid-template-columns:' + (wide ? '260px minmax(0,1fr) 300px' : '240px minmax(0,1fr)') + ';gap:18px;align-items:start')}>
+        <div style={css(wide ? '' : 'grid-row:span 2')}>{lab(<>Steps &middot; drag to reorder</>)}{left}</div>
+        <div style={css('min-width:0')}>{lab(midLabel)}{mid}</div>
+        <div style={css('min-width:0')}>{right ? <>{lab(cur?.id === 'items' ? 'Edit item' : cur?.id === 'photos' ? 'Edit photo' : 'Edit step')}{right}</> : null}</div>
       </div>
     </>
   );
