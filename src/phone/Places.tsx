@@ -12,7 +12,7 @@ import { useSession, signOut, lockPhone, perms } from '../lib/session';
 import { useConfig, configFor } from '../lib/config';
 import { useSync, kick, pullAll } from '../lib/sync';
 import { supabase } from '../lib/supabase';
-import { steps as stepList, percent, fleetTag, dirWord, typeName } from '../lib/check';
+import { steps as stepList, percent, fleetTag, dirWord, typeName, stcLabel } from '../lib/check';
 import { greeting, time, when, num } from '../lib/format';
 import { useOnline } from './useCheck';
 
@@ -165,7 +165,7 @@ export function History() {
             <button key={r.id} type="button" className="k-tap k-reset" onClick={() => nav(r.status === 'draft' ? '/check/' + r.id : r.status === 'waiting' ? '/check/' + r.id + '/sending' : '/history/' + r.id)}
               style={css('display:block;width:100%;text-align:left;background:' + W + ';border:1px solid ' + BL + ';border-radius:8px;padding:18px;color:' + N)}>
               <div style={css('display:flex;justify-content:space-between;gap:10px;align-items:center')}>{badge(r.direction === 'OUT' ? 'CHECK OUT' : 'CHECK IN', r.direction === 'OUT' ? 'out' : 'in')}<span style={css('font-size:14px;color:' + MU)}>{when(r.sent_at || r.created_at)}</span></div>
-              <div style={css('display:flex;align-items:center;gap:12px;margin-top:14px')}>{fleet(r.c_no || 'STC ' + r.stc_no)}<div><div style={css('font-weight:700;font-size:17px')}>{r.customer || 'No customer'}</div>{r.collecting_reg ? <div style={css('font-size:14px;color:' + MU)}>Collecting: <b style={css('font-family:' + MO)}>{r.collecting_reg}</b></div> : null}</div></div>
+              <div style={css('display:flex;align-items:center;gap:12px;margin-top:14px')}>{fleet(r.c_no || stcLabel(r.stc_no))}<div style={css('min-width:0;overflow-wrap:anywhere')}><div style={css('font-weight:700;font-size:17px')}>{r.customer || 'No customer'}</div>{r.collecting_reg ? <div style={css('font-size:14px;color:' + MU)}>Collecting: <b style={css('font-family:' + MO)}>{r.collecting_reg}</b></div> : null}</div></div>
               <div style={css('display:flex;justify-content:space-between;align-items:center;margin-top:14px;padding-top:12px;border-top:1px solid ' + BD)}>
                 {r.status === 'sent' ? badge('✓ SENT', 'ok') : r.status === 'waiting' ? badge('⏱ WAITING TO SEND', 'pend') : badge('UNFINISHED', 'draft')}
                 <span style={css('font-size:14px;color:' + MU)}>{r.new_damage ? r.new_damage + ' damage' : 'No new damage'}</span>

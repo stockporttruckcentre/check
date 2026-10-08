@@ -29,6 +29,7 @@ supabase.auth.onAuthStateChange(async (ev, s) => {
 });
 
 export async function startSession() {
+  if (await linkSignIn()) { set({ ready: true }); return; }
   const lastId = await kvGet<string>('currentUser');
   const resumable = await kvGet<{ personId: string; at: number }>('unlocked');
   /* The app reopening within the idle window goes straight back in (source/05 S_edge, App reopened). */
@@ -49,7 +50,7 @@ export async function sendCode(email: string): Promise<string | null> {
     const ok = await supabase.rpc('can_sign_in', { p_email: e });
     if (ok.error) throw ok.error;
     if (!ok.data) return 'That email hasn’t been added. Ask your site lead to add you.';
-    const r = await supabase.auth.signInWithOtp({ email: e, options: { shouldCreateUser: true } });
+    const r = await supabase.auth.signInWithOtp({ email: e, options: { shouldCreateUser: true, emailRedirectTo: location.origin } });
     if (r.error) throw r.error;
     set({ pendingEmail: e });
     await kvSet('codeSentAt', Date.now());
@@ -62,18 +63,32 @@ export async function verifyCode(code: string): Promise<string | null> {
   if (!email) return 'Start again with your email.';
   const r = await supabase.auth.verifyOtp({ email, token: code, type: 'email' });
   if (r.error || !r.data.session) return /expired/i.test(r.error?.message || '') ? 'That code has run out. Send a new one.' : 'That code isn’t right. Check the email and try again.';
+  return finishSignIn(r.data.session, email);
+}
+
+/* The same email also carries a link. Tapping it on the phone signs in just as the code does. */
+const FROM_LINK = typeof location !== 'undefined' && /access_token=|[?&]code=|token_hash=/.test(location.href);
+async function linkSignIn(): Promise<boolean> {
+  if (!FROM_LINK) return false;
+  const { data } = await supabase.auth.getSession();
+  history.replaceState(null, '', location.pathname);
+  const s = data.session;
+  if (!s || !s.user.email) return false;
+  const err = await finishSignIn(s, s.user.email.toLowerCase());
+  return !err;
+}
+
+async function finishSignIn(s: { access_token: string; refresh_token: string; user: { id: string } }, email: string): Promise<string | null> {
   const me = await supabase.rpc('touch_me');
   if (me.error || !me.data) return 'That email hasn’t been added. Ask your site lead to add you.';
   const d = me.data as { person: Record<string, unknown>; role: { id: string; name: string; perms: Perms }; site: { id: string; name: string } | null };
-  const old = await db.users.get(d.person.id as string);
   const u: DeviceUser = {
-    personId: d.person.id as string, userId: r.data.session.user.id, name: d.person.name as string, email,
+    personId: d.person.id as string, userId: s.user.id, name: d.person.name as string, email,
     roleId: d.role.id, roleName: d.role.name, perms: d.role.perms, siteId: d.site?.id || null, siteName: d.site?.name || 'All sites',
     aliases: (d.person.aliases as string[]) || [],
-    session: { access_token: r.data.session.access_token, refresh_token: r.data.session.refresh_token },
+    session: { access_token: s.access_token, refresh_token: s.refresh_token },
     pinHash: null, pinSalt: null, pinSetAt: null, lastUsed: new Date().toISOString(), fails: 0, lockedUntil: null,
   };
-  void old;
   await db.users.put(u);
   set({ pendingEmail: null, needPin: u });
   return null;

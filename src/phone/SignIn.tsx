@@ -71,6 +71,7 @@ function Code({ email }: { email: string }) {
       {scroll(<>
         {brand}
         <div style={css('font-weight:700;font-size:16px;text-align:center')}>Code sent to {email}</div>
+        <div style={css('font-size:14px;text-align:center;color:' + MU)}>Type the code, or tap the link in the email on this phone.</div>
         <div style={css('position:relative')} onClick={() => ref.current?.focus()}>
           <div style={css('display:grid;grid-template-columns:repeat(6,1fr);gap:8px')} aria-hidden="true">
             {cells.map((c, i) => <div key={i} style={css('height:60px;border-radius:8px;background:' + W + ';border:' + (i === code.length ? '3px solid ' + N : '2px solid #A3A39D') + ';display:flex;align-items:center;justify-content:center;font-family:' + MO + ';font-weight:800;font-size:26px')}>{c}</div>)}

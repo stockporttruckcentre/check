@@ -38,16 +38,16 @@ export default function OfficeApp() {
 
   const hasDraft = d.draft != null || d.draftNumber != null;
   const header = (
-    <div style={css('height:56px;background:' + N + ';color:#fff;display:flex;align-items:center;gap:16px;padding:0 24px')}>
-      <span style={css('font-family:' + PT + ';font-weight:800;font-size:18px')}>STC Checks</span>
+    <div style={css('height:56px;background:' + N + ';color:#fff;display:flex;align-items:center;gap:16px;padding:0 ' + (w < 640 ? 16 : 24) + 'px')}>
+      <span style={css('font-family:' + PT + ';font-weight:800;font-size:18px;white-space:nowrap')}>STC Checks</span>
       <span style={css('font-size:13px;opacity:0.7')}>Office</span>
       {hasDraft && perms.edit_config
         ? <span style={css('margin-left:18px;display:inline-flex;align-items:center;gap:8px;height:30px;padding:0 12px;border-radius:999px;background:#F2C71B;color:#111;font-size:13px;font-weight:800')}>DRAFT v{draftNo(d)} &middot; not live yet</span>
         : null}
       {user
         ? <span style={css('margin-left:auto;display:flex;align-items:center;gap:10px;font-size:14px')}>
-          <span style={css('width:32px;height:32px;border-radius:50%;background:' + R + ';display:inline-flex;align-items:center;justify-content:center;font-weight:800')}>{initials(user.name)}</span>
-          {user.name} &middot; {user.roleName}
+          <span title={user.name + ' · ' + user.roleName} style={css('flex:none;width:32px;height:32px;border-radius:50%;background:' + R + ';display:inline-flex;align-items:center;justify-content:center;font-weight:800')}>{initials(user.name)}</span>
+          {w >= 640 ? <span style={css('white-space:nowrap')}>{user.name} &middot; {user.roleName}</span> : null}
         </span>
         : null}
     </div>
