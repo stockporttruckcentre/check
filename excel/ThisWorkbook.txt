@@ -1,0 +1,3 @@
+Private Sub Workbook_AfterSave(ByVal Success As Boolean)
+    If Success Then STCChecks.PushToApp
+End Sub
