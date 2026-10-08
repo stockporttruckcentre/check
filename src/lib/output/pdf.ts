@@ -9,14 +9,16 @@
 import { jsPDF, GState } from 'jspdf';
 import type { Check, Config, PhotoMeta } from '../../data/types';
 import type { View, Drawing } from '../../kit/drawings';
-import { assetSVGString } from '../../kit/drawings';
+import { assetSVGString, VIEWS } from '../../kit/drawings';
 import { N, R, PA, SU, W, G, A } from '../../kit/tokens';
 import { dirWord, stcLabel, drawingFor, itemsFor, readingsFor, strapsApply, tyreKeys } from '../check';
 import { num } from '../format';
 import {
-  VIEW_ORDER, when, dateTime, typeLine, rateShort, assetShort, accountOrder, livePins, typeCell, photoRefs, oldNote,
+  VIEW_ORDER, when, dateTime, typeLine, rateShort, assetShort, accountOrder, livePins, photoRefs, oldNote,
   answerWord,
 } from './text';
+
+const VIEW_NAMES = Object.fromEntries(VIEWS) as Record<View, string>;
 
 /* ---------------- Geometry, in pack px ---------------- */
 
@@ -30,7 +32,6 @@ const FOOT_Y = PAGE_H - 1 - 14 - 10; // the footer line box: frame, padding-bott
 const LIMIT = FOOT_Y - 10; // the column gap before the footer
 const GAP = 10; // the content column's gap
 const OLD = '#8A8F99'; // old pin grey, from pin() in source/08
-const ORANGE = '#FF8A73'; // "TRUCK CENTRE"
 const BD_ALPHA = 0.35; // rules lighter than the pack's BD, from the business: "table borders too thick"
 const LETTER = -0.16; // letter-spacing:-0.01em on the reference page's root, 16px
 
@@ -45,11 +46,41 @@ const base = (top: number, lineH: number, size: number) => top + lineH / 2 + siz
 
 /* ---------------- Fonts ---------------- */
 
-type Fam = 'b' | 'm'; // body (Inter in the pack), mono
-function font(doc: jsPDF, fam: Fam, bold: boolean, size: number, color: string) {
-  doc.setFont(fam === 'm' ? 'courier' : 'helvetica', bold ? 'bold' : 'normal');
+/* Inter and Panton only, from the business. Inter is embedded (public/fonts, Google's latin
+   cut, OFL); Panton is drawn as an image (below). 'm' was the pack's mono; it is Inter now. */
+type Fam = 'b' | 'm';
+let interOn = false;
+let interState: Promise<{ r: string; b: string } | null> | null = null;
+function interFiles() {
+  if (interState) return interState;
+  const b64 = async (u: string) => {
+    const r = await fetch(u);
+    if (!r.ok) throw new Error('font');
+    const blob = await r.blob();
+    const url = await new Promise<string>((ok, fail) => { const fr = new FileReader(); fr.onload = () => ok(fr.result as string); fr.onerror = fail; fr.readAsDataURL(blob); });
+    return url.slice(url.indexOf(',') + 1);
+  };
+  interState = (async () => { try { return { r: await b64('/fonts/Inter-Regular.ttf'), b: await b64('/fonts/Inter-Bold.ttf') }; } catch { return null; } })();
+  return interState;
+}
+async function useInter(doc: jsPDF) {
+  const f = await interFiles();
+  interOn = !!f;
+  if (!f) return;
+  doc.addFileToVFS('Inter-Regular.ttf', f.r); doc.addFont('Inter-Regular.ttf', 'Inter', 'normal');
+  doc.addFileToVFS('Inter-Bold.ttf', f.b); doc.addFont('Inter-Bold.ttf', 'Inter', 'bold');
+}
+function font(doc: jsPDF, _fam: Fam, bold: boolean, size: number, color: string) {
+  doc.setFont(interOn ? 'Inter' : 'helvetica', bold ? 'bold' : 'normal');
   doc.setFontSize(pt(size));
   doc.setTextColor(color);
+}
+/** A field label: Inter, small capitals spaced out, in SU. */
+function label(doc: jsPDF, t: string, x: number, top: number) {
+  font(doc, 'b', false, 6.5, SU);
+  doc.setCharSpace(mm(0.35));
+  doc.text(t.toUpperCase(), mm(x), mm(base(top, lh('m', 7), 6.5)));
+  doc.setCharSpace(0);
 }
 const width = (doc: jsPDF, s: string) => doc.getTextWidth(s) / K;
 
@@ -167,7 +198,7 @@ async function header(doc: jsPDF, c: Check) {
   const img = await logo();
   let x = X0;
   if (img) { doc.addImage(img, 'PNG', mm(X0), mm((HEAD_H - LOGO_H) / 2), mm(LOGO_W), mm(LOGO_H)); x = X0 + LOGO_W + 8; }
-  await panton(doc, [{ t: 'STOCKPORT ', color: W }, { t: 'TRUCK CENTRE', color: ORANGE }], x, 15, 13);
+  await panton(doc, [{ t: 'STOCKPORT ', color: W }, { t: 'TRUCK CENTRE', color: R }], x, 15, 13);
   /* The stock number heads the report, from the business. */
   await panton(doc, [{ t: dirWord(c.direction).toUpperCase() + ' · ' + stcLabel(c.stcNo), color: W }], X0 + CW, 15, 13, 'right');
   bd(doc);
@@ -193,7 +224,7 @@ async function heading(doc: jsPDF, text: string, y: number, x = X0, w = CW): Pro
 
 interface GridCell { label: string; value: string }
 /** Cells 1px BD, padding 5px 6px, 7px mono label in SU, 9px bold value. Returns the bottom. */
-function grid(doc: jsPDF, cells: GridCell[], x: number, y: number, w: number, cols: number, pad = 5): number {
+function grid(doc: jsPDF, cells: GridCell[], x: number, y: number, w: number, cols: number, pad = 5, minH = 0): number {
   const g = 6;
   const cw = (w - g * (cols - 1)) / cols;
   const inner = cw - 12;
@@ -203,13 +234,12 @@ function grid(doc: jsPDF, cells: GridCell[], x: number, y: number, w: number, co
     font(doc, 'b', true, 9, N);
     const lines = row.map((cell) => (cell.value ? (doc.splitTextToSize(cell.value, mm(inner)) as string[]) : ['']));
     const n = Math.max(...lines.map((l) => l.length));
-    const h = 1 + pad + lh('m', 7) + n * lh('b', 9) + pad + 1;
+    const h = Math.max(minH, 1 + pad + lh('m', 7) + n * lh('b', 9) + pad + 1);
     row.forEach((cell, i) => {
       const cx = x + i * (cw + g);
       bd(doc);
       doc.rect(mm(cx + 0.5), mm(top + 0.5), mm(cw - 1), mm(h - 1), 'S');
-      font(doc, 'm', false, 7, SU);
-      doc.text(cell.label.toUpperCase(), mm(cx + 7), mm(base(top + 1 + pad, lh('m', 7), 7)));
+      label(doc, cell.label, cx + 7, top + 1 + pad);
       font(doc, 'b', true, 9, N);
       lines[i].forEach((t, j) => doc.text(t, mm(cx + 7), mm(base(top + 1 + pad + lh('m', 7) + j * lh('b', 9), lh('b', 9), 9))));
     });
@@ -230,7 +260,7 @@ function cellFont(doc: jsPDF, c: Cell, head: boolean) {
 /** The browser's automatic table layout: each column gets its widest content, and any
     room left over is shared in proportion; when there is not enough room, columns
     shrink towards their longest word. */
-function columns(doc: jsPDF, head: Cell[], rows: Cell[][], w: number): number[] {
+function columns(doc: jsPDF, head: Cell[], rows: Cell[][], w: number, flex?: number): number[] {
   const extra = TP * 2 + 1 + 0.5; // half a px over, so a word measured to fit is never split
   const mins = head.map(() => 0), maxs = head.map(() => 0);
   [head, ...rows].forEach((row, ri) => row.forEach((c, i) => {
@@ -241,6 +271,11 @@ function columns(doc: jsPDF, head: Cell[], rows: Cell[][], w: number): number[] 
     mins[i] = Math.max(mins[i], word);
   }));
   const sumMax = maxs.reduce((a, b) => a + b, 0);
+  /* A flexible column (the note) takes whatever the others leave once each is as wide as its longest content. */
+  if (flex != null) {
+    const others = maxs.reduce((a, b, i) => (i === flex ? a : a + b), 0);
+    if (w - others >= mins[flex]) return maxs.map((m, i) => (i === flex ? w - others : m));
+  }
   if (sumMax <= w) return maxs.map((m) => m + (w - sumMax) * (m / sumMax));
   const sumMin = mins.reduce((a, b) => a + b, 0);
   if (sumMin >= w) return mins.map((m) => (m * w) / sumMin);
@@ -253,9 +288,9 @@ interface Flow { doc: jsPDF; c: Check; y: number; newPage: () => Promise<void> }
 
 /** border-collapse table, 1px BD rules, header row on PA. Breaks across pages and
     repeats the header row. */
-async function table(f: Flow, head: Cell[], rows: Cell[][], x = X0, w = CW, widths?: number[]) {
+async function table(f: Flow, head: Cell[], rows: Cell[][], x = X0, w = CW, widths?: number[], flex?: number) {
   const { doc } = f;
-  const cols = widths || columns(doc, head, rows, w - 1);
+  const cols = widths || columns(doc, head, rows, w - 1, flex);
   const lineH = lh('b', TF);
   const wrap = (row: Cell[], isHead: boolean) => row.map((c, i) => {
     cellFont(doc, c, isHead);
@@ -368,7 +403,7 @@ function drawPin(ctx: CanvasRenderingContext2D, p: StagePin, px: number, py: num
   ctx.restore();
 }
 
-async function stageImage(drawing: Drawing, view: View, pins: StagePin[]): Promise<string | null> {
+async function stageImage(drawing: Drawing, view: View, pins: StagePin[], crop: [number, number] = [0, 1]): Promise<string | null> {
   const ctx = canvas((STAGE_W + SPILL * 2) * IS, (STAGE_H + SPILL * 2) * IS);
   if (!ctx) return null;
   const svg = assetSVGString(drawing, view).replace('width="100%"', 'width="' + STAGE_W * IS + '" height="' + STAGE_H * IS + '"');
@@ -384,7 +419,13 @@ async function stageImage(drawing: Drawing, view: View, pins: StagePin[]): Promi
   ctx.scale(IS, IS);
   for (const p of pins) drawPin(ctx, p, SPILL + p.x * STAGE_W, SPILL + p.y * STAGE_H, ok);
   ctx.restore();
-  return ctx.canvas.toDataURL('image/png');
+  if (crop[0] === 0 && crop[1] === 1) return ctx.canvas.toDataURL('image/png');
+  /* Front and rear are drawn in the middle of the same wide frame: keep that middle part. */
+  const cw = ((crop[1] - crop[0]) * STAGE_W + SPILL * 2) * IS;
+  const out = canvas(cw, ctx.canvas.height);
+  if (!out) return null;
+  out.drawImage(ctx.canvas, crop[0] * STAGE_W * IS, 0, cw, ctx.canvas.height, 0, 0, cw, ctx.canvas.height);
+  return out.canvas.toDataURL('image/png');
 }
 
 /** Pins are stored as fractions of the drawing; a value over 1 is read as a percentage. */
@@ -412,9 +453,23 @@ function mark(doc: jsPDF, a: string | undefined, x: number, cy: number) {
   }
 }
 
-/** The tyres seen from above: front at the top, nearside on the left, each tyre with its tread
-    beside it. Red at or under the legal limit, amber at or under the low tread warning. */
-function tyreDiagram(doc: jsPDF, c: Check, config: Config, x: number, y: number, w: number): number {
+/* The tyres seen from above, front at the top, nearside on the left. Proportions follow the real
+   thing: a 13.6m semi-trailer is about five times as long as it is wide, its king pin sits about a
+   metre back from the front, the landing legs a third of the way along, and its axles are 1.31m
+   apart with about 1.8m of body behind the last one. A rigid truck has a cab and a steer axle at
+   the front; a van has an axle at each end. */
+const PLAN_W = 30, PLAN_L = 144;
+function planAxles(drawing: Drawing, axles: number): number[] {
+  const L = PLAN_L;
+  if (drawing === 'van') return axles <= 1 ? [0.8 * L] : Array.from({ length: axles }, (_, i) => (i === 0 ? 0.17 * L : 0.72 * L + (i - 1) * 0.1 * L));
+  if (drawing === 'truck') return Array.from({ length: axles }, (_, i) => (i === 0 ? 0.13 * L : 0.66 * L + (i - 1) * 0.1 * L));
+  const pitch = 0.096 * L, last = 0.87 * L;
+  return Array.from({ length: axles }, (_, i) => last - (axles - 1 - i) * pitch);
+}
+function tyreHeight(c: Check): number {
+  return tyreKeys(c).length && c.axles ? 14 + PLAN_L + 8 + 14 : 14;
+}
+async function tyreDiagram(doc: jsPDF, c: Check, config: Config, x: number, y: number, w: number): Promise<number> {
   const keys = tyreKeys(c);
   const axles = c.axles || 0;
   if (!keys.length || !axles) {
@@ -422,43 +477,71 @@ function tyreDiagram(doc: jsPDF, c: Check, config: Config, x: number, y: number,
     doc.text('Axles not recorded', mm(x), mm(base(y, 10, 8)));
     return y + 14;
   }
-  const cx = x + w / 2, BW = 56, TW = 11, TH = 17, PITCH = 23;
-  font(doc, 'm', false, 7, SU);
-  doc.text('FRONT', mm(cx), mm(base(y, 8, 7)), { align: 'center' });
-  doc.text('NS', mm(x), mm(base(y, 8, 7)));
-  doc.text('OS', mm(x + w), mm(base(y, 8, 7)), { align: 'right' });
-  const top = y + 10, bodyH = Math.max(96, 46 + axles * PITCH);
+  const drawing = drawingFor(c.trailerType, config);
+  const cx = x + w / 2, H = PLAN_W / 2, L = PLAN_L;
+  /* Side names where the yard reads them: big, at the top of each side. */
+  await panton(doc, [{ t: 'NS', color: N }], x, y, 11);
+  await panton(doc, [{ t: 'OS', color: N }], x + w, y, 11, 'right');
+  label(doc, 'Front', cx - width(doc, 'FRONT') / 2 - 3, y + 2);
+  const top = y + 14;
   doc.setGState(new GState({ 'stroke-opacity': 1 }));
+  doc.setLineWidth(mm(0.8));
   doc.setDrawColor(N);
-  doc.setLineWidth(mm(1));
-  doc.roundedRect(mm(cx - BW / 2), mm(top), mm(BW), mm(bodyH), mm(4), mm(4), 'S');
-  doc.circle(mm(cx), mm(top + 14), mm(3), 'S'); // the king pin
+  doc.setFillColor('#EFF2F8');
+  if (drawing === 'truck') {
+    const cab = 0.17 * L;
+    doc.roundedRect(mm(cx - H + 2), mm(top), mm(PLAN_W - 4), mm(cab - 3), mm(4), mm(4), 'FD');
+    doc.line(mm(cx - H + 5), mm(top + 5), mm(cx + H - 5), mm(top + 5)); // windscreen
+    doc.roundedRect(mm(cx - H), mm(top + cab), mm(PLAN_W), mm(L - cab), mm(2), mm(2), 'FD');
+  } else if (drawing === 'van') {
+    doc.roundedRect(mm(cx - H + 1), mm(top), mm(PLAN_W - 2), mm(L), mm(7), mm(7), 'FD');
+    doc.line(mm(cx - H + 4), mm(top + 0.2 * L), mm(cx + H - 4), mm(top + 0.2 * L)); // windscreen
+  } else {
+    doc.roundedRect(mm(cx - H), mm(top), mm(PLAN_W), mm(L), mm(2), mm(2), 'FD');
+    /* King pin on its plate, landing legs. */
+    doc.setLineWidth(mm(0.5));
+    doc.rect(mm(cx - 6), mm(top + 0.075 * L - 6), mm(12), mm(12), 'S');
+    doc.setFillColor(N);
+    doc.circle(mm(cx), mm(top + 0.075 * L), mm(2.2), 'F');
+    doc.rect(mm(cx - H + 3), mm(top + 0.3 * L - 2), mm(5), mm(4), 'F');
+    doc.rect(mm(cx + H - 8), mm(top + 0.3 * L - 2), mm(5), mm(4), 'F');
+  }
+  /* Rear lights and the under-run bar. */
+  doc.setFillColor(R);
+  doc.rect(mm(cx - H + 1), mm(top + L - 2.5), mm(5), mm(2), 'F');
+  doc.rect(mm(cx + H - 6), mm(top + L - 2.5), mm(5), mm(2), 'F');
+  doc.setFillColor(N);
+  doc.rect(mm(cx - H + 3), mm(top + L + 2), mm(PLAN_W - 6), mm(2), 'F');
+  label(doc, 'Rear', cx - width(doc, 'REAR') / 2 - 3, top + L + 5);
+
   const legal = config.limits.legalTread, low = config.limits.lowTread;
-  for (let n = 1; n <= axles; n++) {
-    const ay = top + bodyH - 14 - (axles - n) * PITCH;
-    doc.setDrawColor(N);
-    doc.setLineWidth(mm(1));
-    doc.line(mm(cx - BW / 2 - 2), mm(ay), mm(cx + BW / 2 + 2), mm(ay));
+  const TW = 6, TL = 13;
+  planAxles(drawing, axles).forEach((ay0, i) => {
+    const n = i + 1, ay = top + ay0;
+    doc.setDrawColor(N); doc.setLineWidth(mm(0.6));
+    doc.line(mm(cx - H), mm(ay), mm(cx + H), mm(ay));
     (['ns', 'os'] as const).forEach((side) => {
       const d = c.tyres[side + '_' + n]?.depth;
       const colour = d == null ? SU : d <= legal ? R : d <= low ? A : N;
-      const tx = side === 'ns' ? cx - BW / 2 - 3 - TW : cx + BW / 2 + 3;
+      const tx = side === 'ns' ? cx - H - TW + 2 : cx + H - 2;
       doc.setFillColor(colour);
-      doc.roundedRect(mm(tx), mm(ay - TH / 2), mm(TW), mm(TH), mm(2), mm(2), 'F');
-      font(doc, 'b', colour !== N, 9, colour === N ? N : colour);
-      const label = d == null ? 'not read' : d + 'mm';
+      doc.roundedRect(mm(tx), mm(ay - TL / 2), mm(TW), mm(TL), mm(1.5), mm(1.5), 'F');
       const lx = side === 'ns' ? tx - 5 : tx + TW + 5;
-      doc.text(label, mm(lx), mm(base(ay - 6, 12, 9)), { align: side === 'ns' ? 'right' : 'left' });
-      font(doc, 'm', false, 6.5, SU);
-      doc.text('AXLE ' + n, mm(lx), mm(base(ay + 4, 8, 6.5)), { align: side === 'ns' ? 'right' : 'left' });
+      /* One line per tyre, "Axle 1  6mm", so close-set axles never collide. */
+      const val = d == null ? 'Not read' : d + 'mm', ax = 'Axle ' + n;
+      font(doc, 'b', true, 9, colour);
+      const vw = width(doc, val);
+      doc.text(val, mm(side === 'ns' ? lx - vw : lx), mm(base(ay - 5.5, 11, 9)));
+      font(doc, 'b', false, 7, SU);
+      doc.text(ax, mm(side === 'ns' ? lx - vw - 4 - width(doc, ax) : lx + vw + 4), mm(base(ay - 5.5, 11, 7)));
     });
-  }
-  const ly = top + bodyH + 6;
-  doc.setFillColor(A); doc.rect(mm(x), mm(ly + 2), mm(6), mm(6), 'F');
+  });
+  const ly = top + L + 14;
   font(doc, 'b', false, 7, SU);
+  doc.setFillColor(A); doc.rect(mm(x), mm(ly + 2), mm(6), mm(6), 'F');
   doc.text(low + 'mm or less', mm(x + 9), mm(base(ly, 10, 7)));
   doc.setFillColor(R); doc.rect(mm(x + w / 2), mm(ly + 2), mm(6), mm(6), 'F');
-  doc.text('Legal limit, ' + legal + 'mm', mm(x + w / 2 + 9), mm(base(ly, 10, 7)));
+  doc.text('Legal limit ' + legal + 'mm', mm(x + w / 2 + 9), mm(base(ly, 10, 7)));
   bd(doc);
   return ly + 12;
 }
@@ -474,6 +557,7 @@ export interface PdfOptions {
 
 export async function buildPdf(c: Check, config: Config, opts: PdfOptions = {}): Promise<Blob> {
   const doc = new jsPDF({ unit: 'mm', format: 'a4', orientation: 'portrait', compress: true });
+  await useInter(doc);
   doc.setProperties({ title: dirWord(c.direction) + ' · ' + stcLabel(c.stcNo) + (c.customer ? ' · ' + c.customer : '') });
   const f: Flow = {
     doc, c, y: TOP,
@@ -517,7 +601,8 @@ export async function buildPdf(c: Check, config: Config, opts: PdfOptions = {}):
   let left = await heading(doc, 'General checks', colTop, X0, LEFT_W) + 6;
   const items = itemsFor(c, config);
   const half = Math.ceil(items.length / 2);
-  const ROW = 11, SUBW = (LEFT_W - 12) / 2;
+  /* Rows spaced to run the length of the tyre drawing beside them, within 12 to 16px. */
+  const ROW = Math.max(12, Math.min(16, (tyreHeight(c) - 6) / Math.max(1, half))), SUBW = (LEFT_W - 12) / 2;
   items.forEach((it, i) => {
     const col = i < half ? 0 : 1, r = i < half ? i : i - half;
     const x = X0 + col * (SUBW + 12), y = left + r * ROW;
@@ -540,7 +625,7 @@ export async function buildPdf(c: Check, config: Config, opts: PdfOptions = {}):
   left += half * ROW;
 
   let rightY = await heading(doc, 'Tyres', colTop, RX, RW) + 6;
-  rightY = tyreDiagram(doc, c, config, RX, rightY, RW);
+  rightY = await tyreDiagram(doc, c, config, RX, rightY, RW);
   f.y = Math.max(left, rightY) + GAP;
 
   /* ---- Damage ---- */
@@ -562,37 +647,50 @@ export async function buildPdf(c: Check, config: Config, opts: PdfOptions = {}):
     const marked = (v: View) => live.some((p) => p.view === v) || old.some((o) => o.view === v);
     /* Nearside and offside always, full size, so a mark on one side reads against the other.
        Front, rear and roof only when marked, three to a row at a smaller size. */
-    const rowsOf: { views: View[]; w: number }[] = [{ views: ['ns', 'os'], w: STAGE_W }];
+    /* One row: nearside and offside always, so a mark on one side reads against the other, then
+       front, rear and roof when marked. Front and rear keep the middle half of their frame, so every
+       drawing in the row stands the same height. */
     const ends = VIEW_ORDER.filter((v) => v !== 'ns' && v !== 'os' && marked(v));
-    if (ends.length) rowsOf.push({ views: ends, w: (CW - GAP * 2) / 3 });
-    for (const row of rowsOf) {
-      const sh = (row.w * 220) / 640;
-      const rowH = lh('m', 9) + 2 + sh;
-      await ensure(rowH);
-      for (let j = 0; j < row.views.length; j++) {
-        const v = row.views[j];
-        const x = X0 + j * (row.w + GAP);
-        font(doc, 'm', false, 9, SU);
-        doc.text(v.toUpperCase(), mm(x), mm(base(f.y, lh('m', 9), 9)));
-        let img: string | null = null;
-        try { img = await stageImage(drawing, v, pinsFor(v)); } catch { img = null; }
-        const k = row.w / STAGE_W;
-        if (img) doc.addImage(img, 'PNG', mm(x - SPILL * k), mm(f.y + lh('m', 9) + 2 - SPILL * k), mm((STAGE_W + SPILL * 2) * k), mm((STAGE_H + SPILL * 2) * k));
-      }
-      f.y += rowH + GAP;
+    const END: [number, number] = [0.25, 0.75];
+    const half = (v: View) => v === 'front' || v === 'rear';
+    const units = 2 + ends.reduce((a, v) => a + (half(v) ? 0.5 : 1), 0);
+    const ws = (CW - GAP * (1 + ends.length)) / units;
+    const views: View[] = ['ns', 'os', ...ends];
+    const sh = (ws * 220) / 640;
+    const rowH = lh('p', 11) + 4 + sh;
+    await ensure(rowH);
+    let vx = X0;
+    for (const v of views) {
+      const crop: [number, number] = half(v) ? END : [0, 1];
+      const vw = ws * (crop[1] - crop[0]);
+      await panton(doc, [{ t: VIEW_NAMES[v].toUpperCase(), color: N }], vx, f.y, 11);
+      let img: string | null = null;
+      try { img = await stageImage(drawing, v, pinsFor(v), crop); } catch { img = null; }
+      const k = ws / STAGE_W;
+      if (img) doc.addImage(img, 'PNG', mm(vx - SPILL * k), mm(f.y + lh('p', 11) + 4 - SPILL * k), mm(((crop[1] - crop[0]) * STAGE_W + SPILL * 2) * k), mm((STAGE_H + SPILL * 2) * k));
+      vx += vw + GAP;
     }
+    f.y += rowH + GAP;
     const head: Cell[] = ['No', 'Where', 'Type', 'Note', 'Photos in zip'].map((t) => ({ t }));
     const rows: Cell[][] = [
       ...live.map((p) => [
-        { t: String(p.number), bold: true, color: R }, { t: p.zone }, { t: typeCell(p.type, config) }, { t: p.note || '' },
+        { t: String(p.number), bold: true, color: R }, { t: p.zone }, { t: p.type || '', bold: true }, { t: p.note || '' },
         { t: photoRefs(p, opts.photos), mono: true },
       ]),
       ...old.map((o) => [
-        { t: o.letter, bold: true, color: OLD }, { t: o.zone }, { t: typeCell(o.type, config) }, { t: oldNote(o) }, { t: '', mono: true },
+        { t: o.letter, bold: true, color: OLD }, { t: o.zone }, { t: o.type || '', bold: true }, { t: oldNote(o) }, { t: '', mono: true },
       ]),
     ];
-    await ensure(16 * 2);
-    await table(f, head, rows);
+    /* The key to the type letters, once, above the table. */
+    await ensure(12 + 16 * 2);
+    let kx = X0;
+    label(doc, 'Key', kx, f.y + 1); kx += 26;
+    for (const t of config.damageTypes) {
+      font(doc, 'b', true, 8, N); doc.text(t.code, mm(kx), mm(base(f.y, 10, 8))); kx += width(doc, t.code) + 3;
+      font(doc, 'b', false, 8, N); doc.text(t.name, mm(kx), mm(base(f.y, 10, 8))); kx += width(doc, t.name) + 12;
+    }
+    f.y += 14;
+    await table(f, head, rows, X0, CW, undefined, 3);
     f.y += GAP;
   }
 
@@ -608,32 +706,34 @@ export async function buildPdf(c: Check, config: Config, opts: PdfOptions = {}):
   }
 
   /* ---- Signature: the box, then who, role, site and when along the same row ---- */
-  const SIG_W = 130, SIG_H = 40;
+  const SIG_W = 130, SIG_H = 50, SIG_PAD = 6;
   await ensure(SIG_H);
-  bd(doc);
-  doc.rect(mm(X0 + 0.5), mm(f.y + 0.5), mm(SIG_W - 1), mm(SIG_H - 1), 'S');
-  font(doc, 'm', false, 7, SU);
-  doc.text('SIGNATURE', mm(X0 + 6), mm(base(f.y + 4, lh('m', 7), 7)));
-  if (c.signature) {
-    try {
-      const prop = doc.getImageProperties(c.signature);
-      const bw = SIG_W - 12, bh = SIG_H - 16;
-      const sc = Math.min(bw / prop.width, bh / prop.height);
-      const iw = prop.width * sc, ih = prop.height * sc;
-      doc.addImage(c.signature, 'PNG', mm(X0 + 6 + (bw - iw) / 2), mm(f.y + 12 + (bh - ih) / 2), mm(iw), mm(ih));
-    } catch { /* an unreadable signature leaves the box empty, and the cells still name who signed */ }
-  }
-  /* Cells padded to the signature box's height so the row lines up. */
-  grid(doc, [
+  /* The cells first, at least the box's height, so the box can match them and every label sits on one line. */
+  const rowH = grid(doc, [
     { label: 'Signed by', value: c.userName },
     { label: 'Role and site', value: [c.userRole, c.siteName].filter(Boolean).join(', ') },
     { label: 'Signed', value: c.signedAt ? dateTime(c.signedAt) : '' },
-  ], X0 + SIG_W + GAP, f.y, CW - SIG_W - GAP, 3, (SIG_H - 2 - lh('m', 7) - lh('b', 9)) / 2);
-  f.y += SIG_H + GAP;
+  ], X0 + SIG_W + GAP, f.y, CW - SIG_W - GAP, 3, SIG_PAD, SIG_H) - f.y;
+  bd(doc);
+  doc.rect(mm(X0 + 0.5), mm(f.y + 0.5), mm(SIG_W - 1), mm(rowH - 1), 'S');
+  label(doc, 'Signature', X0 + 7, f.y + 1 + SIG_PAD);
+  if (c.signature) {
+    try {
+      const prop = doc.getImageProperties(c.signature);
+      const sy = f.y + 1 + SIG_PAD + lh('m', 7) + 2;
+      const bw = SIG_W - 14, bh = f.y + rowH - 4 - sy;
+      const sc = Math.min(bw / prop.width, bh / prop.height);
+      const iw = prop.width * sc, ih = prop.height * sc;
+      doc.addImage(c.signature, 'PNG', mm(X0 + 7 + (bw - iw) / 2), mm(sy + (bh - ih) / 2), mm(iw), mm(ih));
+    } catch { /* an unreadable signature leaves the box empty, and the cells still name who signed */ }
+  }
+  f.y += rowH + GAP;
 
   /* ---- Footers, now the page count is known ---- */
   const pages = doc.getNumberOfPages();
-  const right = 'Record v' + (opts.recordVersion ?? c.version) + ' · ' + config.email.footer;
+  /* The trailer and what the sheet is, from the business. A reopened check says which version. */
+  const v = opts.recordVersion ?? c.version;
+  const right = stcLabel(c.stcNo) + ' · ' + dirWord(c.direction) + ' sheet' + (v > 1 ? ' · version ' + v : '');
   for (let i = 1; i <= pages; i++) {
     doc.setPage(i);
     footer(doc, 'Page ' + i + ' of ' + pages + (i === 1 && pages > 1 ? ' · Damage continues' : ''), right);
