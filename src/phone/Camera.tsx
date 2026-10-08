@@ -1,7 +1,7 @@
 /* The camera, from source/04 camUI (portrait shot), source/04 s5 (check the photo),
    source/05 S_camera (blocked, blurry) and source/08 E (labelled damage camera,
    landscape). One loop for every photo: see what's needed, take it, check it, tick. */
-import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
 import { css } from '../kit/css';
 import { ic, sg, btn, footer, photo, sheet } from '../kit/kit';
 import { PT, R } from '../kit/tokens';
@@ -34,6 +34,7 @@ export default function Camera(p: CameraProps) {
   const [help, setHelp] = useState(false);
   const [torch, setTorch] = useState<boolean | null>(null);
   const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
   const [shot, setShot] = useState<(Taken & { url: string; warn: null | 'blurry' | 'dark' | { same: string } }) | null>(null);
   const [land, setLand] = useState(isLandscape());
   const allowGallery = getConfig().config.allowGallery;
@@ -51,6 +52,13 @@ export default function Camera(p: CameraProps) {
       setBlocked(true);
     }
   }
+  /* The live view is a new element every time the camera comes back from checking a photo or turns
+     sideways, so the running camera is joined to whichever element is on screen. */
+  const attach = useCallback((el: HTMLVideoElement | null) => {
+    video.current = el;
+    const s = stream.current;
+    if (el && s && el.srcObject !== s) { el.srcObject = s; el.play().catch(() => {}); }
+  }, []);
   useEffect(() => {
     start();
     const mq = window.matchMedia('(orientation: landscape)');
@@ -75,9 +83,12 @@ export default function Camera(p: CameraProps) {
 
   async function capture() {
     if (busy || !video.current) return;
-    setBusy(true);
+    setBusy(true); setErr(null);
     try {
       const v = video.current;
+      /* A picture only exists once the camera has sent its first frame. */
+      if (!v.videoWidth) await new Promise<void>((res) => { const t = setTimeout(res, 2500); v.addEventListener('loadeddata', () => { clearTimeout(t); res(); }, { once: true }); });
+      if (!v.videoWidth) throw new Error('not ready');
       let sh: Shrunk | null = null;
       const track = stream.current?.getVideoTracks()[0];
       const IC = (window as unknown as { ImageCapture?: new (t: MediaStreamTrack) => { takePhoto: () => Promise<Blob> } }).ImageCapture;
@@ -91,14 +102,18 @@ export default function Camera(p: CameraProps) {
       if (!sh) sh = await shrink(v, v.videoWidth, v.videoHeight, getConfig().settings.photo);
       await finish(sh, false);
     } catch (e) {
-      alert((e as Error).message || 'Photo didn’t save. Try again.');
+      const m = (e as Error).message || '';
+      setErr(m.startsWith('Photo') ? m : 'The camera wasn’t ready. Wait a second and take it again.');
     } finally { setBusy(false); }
   }
 
   async function pickFile(f: File | undefined) {
     if (!f) return;
     setBusy(true);
-    try { await finish(await fromFile(f, getConfig().settings.photo), true); } finally { setBusy(false); if (fileInput.current) fileInput.current.value = ''; }
+    setErr(null);
+    try { await finish(await fromFile(f, getConfig().settings.photo), true); }
+    catch { setErr('That photo couldn’t be opened. Pick another or take one.'); }
+    finally { setBusy(false); if (fileInput.current) fileInput.current.value = ''; }
   }
 
   async function use() {
@@ -159,6 +174,7 @@ export default function Camera(p: CameraProps) {
     );
   }
 
+  const errEl = err ? <div role="alert" style={css('position:absolute;left:16px;right:16px;bottom:140px;z-index:1;padding:12px 14px;border-radius:10px;background:' + R + ';color:#fff;font-size:16px;font-weight:700;text-align:center')}>{err}</div> : null;
   const shutter = (
     <button type="button" className="k-tap k-reset" onClick={capture} aria-label="Take photo" disabled={busy}
       style={{ ...css('width:84px;height:84px;border-radius:50%;border:5px solid #fff;box-shadow:0 0 0 3px rgba(0,0,0,0.4);background:#fff;padding:0;flex:none'), opacity: busy ? 0.6 : 1 }} />
@@ -171,14 +187,14 @@ export default function Camera(p: CameraProps) {
   const thumb = p.lastThumb
     ? <span style={css('width:56px;height:56px;border-radius:8px;background:#5B6476;border:2px solid #fff;position:relative;background-size:cover;background-position:center;background-image:url(' + p.lastThumb + ')')}><span style={css('position:absolute;right:-8px;top:-8px')}>{sg('done', 22)}</span></span>
     : <span style={css('width:56px;height:56px')} />;
-  const videoEl = <video ref={video} playsInline muted autoPlay style={css('position:absolute;inset:0;width:100%;height:100%;object-fit:cover')} />;
+  const videoEl = <video ref={attach} playsInline muted autoPlay style={css('position:absolute;inset:0;width:100%;height:100%;object-fit:cover')} />;
   const input = <input ref={fileInput} type="file" accept="image/*" hidden onChange={(e) => pickFile(e.target.files?.[0])} />;
 
   /* Labelled damage camera, landscape (source/08 E). */
   if (p.pinTag && land) {
     return (
       <div style={css(wrap + ';background:linear-gradient(180deg,#4A5262,#2A2F38 60%,#1A1D22);color:#fff')}>
-        {videoEl}{input}
+        {videoEl}{input}{errEl}
         <div style={css('position:absolute;left:0;right:0;top:0;padding:12px 18px;background:linear-gradient(180deg,rgba(0,0,0,0.75),transparent);display:flex;align-items:center;gap:12px')}>
           <button type="button" className="k-tap k-reset" onClick={p.onClose} aria-label="Close" style={css('width:44px;height:44px;display:flex;align-items:center;justify-content:center;background:transparent;border:0;color:#fff')}>{ic('cross', 24, '#fff')}</button>
           <span style={css('font-size:12px;font-weight:800;padding:4px 10px;border-radius:999px;background:' + R)}>{p.pinTag}</span>
@@ -194,7 +210,7 @@ export default function Camera(p: CameraProps) {
   /* The shot (source/04 camUI). */
   return (
     <div style={css(wrap + ';background:linear-gradient(180deg,#4A5262,#2A2F38 60%,#1A1D22)')}>
-      {videoEl}{input}
+      {videoEl}{input}{errEl}
       <div style={css('position:absolute;left:0;right:0;top:0;padding:12px 16px;background:linear-gradient(180deg,rgba(0,0,0,0.75),transparent);color:#fff')}>
         <div style={css('display:flex;align-items:center;gap:10px')}>
           <button type="button" className="k-tap k-reset" onClick={p.onClose} aria-label="Close" style={css('width:48px;height:48px;display:flex;align-items:center;justify-content:center;background:transparent;border:0;color:#fff;padding:0')}>{ic('cross', 26, '#fff')}</button>
