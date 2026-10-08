@@ -1,20 +1,21 @@
-/* The PDF report. Page 1 is source/08 S_output, the `pdf` block, drawn at 520px
-   wide for A4. Every length below is the pack's own px value, or the position the
-   pack's markup puts a box at when rendered, and is scaled by 210/520 mm per px.
+/* The PDF report: one A4 page, like the paper sheet it replaces. Built from the parts of
+   source/08 S_output (the navy band, the details grid, the drawings with pins, the damage
+   table), drawn at 520px wide and scaled by 210/520 mm per px.
 
-   The pages after page 1 are not drawn in the pack. The README says only that they
-   "hold the general items, tyres and signature", so they reuse page 1's parts: the
-   same header band, the same section heading, the same table and the same grid cell. */
+   From the business, after the first version: one page, general checks before damage, the
+   checks in two columns, tyres on a diagram, the STC number in the header and first in the
+   asset box, thinner rules, the STC logo. A check with a lot of damage carries its damage
+   table onto a second page. */
 import { jsPDF, GState } from 'jspdf';
 import type { Check, Config, PhotoMeta } from '../../data/types';
 import type { View, Drawing } from '../../kit/drawings';
 import { assetSVGString } from '../../kit/drawings';
-import { N, R, PA, SU, W } from '../../kit/tokens';
-import { dirWord, fleetTag, drawingFor, itemsFor, readingsFor, strapsApply, tyreKeys } from '../check';
+import { N, R, PA, SU, W, G, A } from '../../kit/tokens';
+import { dirWord, stcLabel, drawingFor, itemsFor, readingsFor, strapsApply, tyreKeys } from '../check';
 import { num } from '../format';
 import {
   VIEW_ORDER, when, dateTime, typeLine, rateShort, assetShort, accountOrder, livePins, typeCell, photoRefs, oldNote,
-  tyreName, isLow, answerWord,
+  answerWord,
 } from './text';
 
 /* ---------------- Geometry, in pack px ---------------- */
@@ -30,7 +31,7 @@ const LIMIT = FOOT_Y - 10; // the column gap before the footer
 const GAP = 10; // the content column's gap
 const OLD = '#8A8F99'; // old pin grey, from pin() in source/08
 const ORANGE = '#FF8A73'; // "TRUCK CENTRE"
-const BD_ALPHA = 0x9e / 255; // BD is #09163a9e: navy at 62%
+const BD_ALPHA = 0.35; // rules lighter than the pack's BD, from the business: "table borders too thick"
 const LETTER = -0.16; // letter-spacing:-0.01em on the reference page's root, 16px
 
 /* Line heights the pack's text gets at line-height:normal, measured from its render. */
@@ -137,19 +138,38 @@ async function panton(doc: jsPDF, parts: Part[], x: number, top: number, size: n
 function bd(doc: jsPDF) {
   doc.setGState(new GState({ 'stroke-opacity': BD_ALPHA }));
   doc.setDrawColor(N);
-  doc.setLineWidth(mm(1));
+  doc.setLineWidth(mm(0.5));
 }
 const hline = (doc: jsPDF, x0: number, x1: number, y: number) => doc.line(mm(x0), mm(y), mm(x1), mm(y));
 const vline = (doc: jsPDF, x: number, y0: number, y1: number) => doc.line(mm(x), mm(y0), mm(x), mm(y1));
 
 /* ---------------- Page furniture ---------------- */
 
+let logoState: Promise<string | null> | null = null;
+/** The STC logo, from public/stc-logo.png, cached for the session and offline by the app. */
+function logo(): Promise<string | null> {
+  if (logoState) return logoState;
+  logoState = (async () => {
+    try {
+      const r = await fetch('/stc-logo.png');
+      if (!r.ok) return null;
+      const b = await r.blob();
+      return await new Promise<string>((ok, fail) => { const fr = new FileReader(); fr.onload = () => ok(fr.result as string); fr.onerror = fail; fr.readAsDataURL(b); });
+    } catch { return null; }
+  })();
+  return logoState;
+}
+const LOGO_H = 34, LOGO_W = LOGO_H * 330 / 200;
+
 async function header(doc: jsPDF, c: Check) {
   doc.setFillColor(N);
   doc.rect(0, 0, mm(520), mm(HEAD_H), 'F');
-  /* padding:14px 20px inside the 1px frame: line box at y 15, text from x 21 to 499. */
-  await panton(doc, [{ t: 'STOCKPORT ', color: W }, { t: 'TRUCK CENTRE', color: ORANGE }], X0, 15, 13);
-  await panton(doc, [{ t: dirWord(c.direction).toUpperCase() + ' · ' + fleetTag(c), color: W }], X0 + CW, 15, 13, 'right');
+  const img = await logo();
+  let x = X0;
+  if (img) { doc.addImage(img, 'PNG', mm(X0), mm((HEAD_H - LOGO_H) / 2), mm(LOGO_W), mm(LOGO_H)); x = X0 + LOGO_W + 8; }
+  await panton(doc, [{ t: 'STOCKPORT ', color: W }, { t: 'TRUCK CENTRE', color: ORANGE }], x, 15, 13);
+  /* The stock number heads the report, from the business. */
+  await panton(doc, [{ t: dirWord(c.direction).toUpperCase() + ' · ' + stcLabel(c.stcNo), color: W }], X0 + CW, 15, 13, 'right');
   bd(doc);
 }
 
@@ -161,11 +181,11 @@ function footer(doc: jsPDF, left: string, right: string) {
 }
 
 /** The section heading: "Damage" in Panton 12px, 3px padding, 1px BD rule under it. */
-async function heading(doc: jsPDF, text: string, y: number): Promise<number> {
-  await panton(doc, [{ t: text, color: N }], X0, y, 12);
+async function heading(doc: jsPDF, text: string, y: number, x = X0, w = CW): Promise<number> {
+  await panton(doc, [{ t: text, color: N }], x, y, 12);
   const h = lh('p', 12) + 3 + 1;
   bd(doc);
-  hline(doc, X0, X0 + CW, y + h - 0.5);
+  hline(doc, x, x + w, y + h - 0.5);
   return y + h;
 }
 
@@ -173,7 +193,7 @@ async function heading(doc: jsPDF, text: string, y: number): Promise<number> {
 
 interface GridCell { label: string; value: string }
 /** Cells 1px BD, padding 5px 6px, 7px mono label in SU, 9px bold value. Returns the bottom. */
-function grid(doc: jsPDF, cells: GridCell[], x: number, y: number, w: number, cols: number): number {
+function grid(doc: jsPDF, cells: GridCell[], x: number, y: number, w: number, cols: number, pad = 5): number {
   const g = 6;
   const cw = (w - g * (cols - 1)) / cols;
   const inner = cw - 12;
@@ -183,15 +203,15 @@ function grid(doc: jsPDF, cells: GridCell[], x: number, y: number, w: number, co
     font(doc, 'b', true, 9, N);
     const lines = row.map((cell) => (cell.value ? (doc.splitTextToSize(cell.value, mm(inner)) as string[]) : ['']));
     const n = Math.max(...lines.map((l) => l.length));
-    const h = 1 + 5 + lh('m', 7) + n * lh('b', 9) + 5 + 1;
+    const h = 1 + pad + lh('m', 7) + n * lh('b', 9) + pad + 1;
     row.forEach((cell, i) => {
       const cx = x + i * (cw + g);
       bd(doc);
       doc.rect(mm(cx + 0.5), mm(top + 0.5), mm(cw - 1), mm(h - 1), 'S');
       font(doc, 'm', false, 7, SU);
-      doc.text(cell.label.toUpperCase(), mm(cx + 7), mm(base(top + 6, lh('m', 7), 7)));
+      doc.text(cell.label.toUpperCase(), mm(cx + 7), mm(base(top + 1 + pad, lh('m', 7), 7)));
       font(doc, 'b', true, 9, N);
-      lines[i].forEach((t, j) => doc.text(t, mm(cx + 7), mm(base(top + 6 + lh('m', 7) + j * lh('b', 9), lh('b', 9), 9))));
+      lines[i].forEach((t, j) => doc.text(t, mm(cx + 7), mm(base(top + 1 + pad + lh('m', 7) + j * lh('b', 9), lh('b', 9), 9))));
     });
     top += h + g;
   }
@@ -202,7 +222,7 @@ function grid(doc: jsPDF, cells: GridCell[], x: number, y: number, w: number, co
 
 interface Cell { t: string; color?: string; bold?: boolean; mono?: boolean }
 const TF = 8.5; // font-size:8.5px
-const TP = 4; // padding:4px
+const TP = 2; // tighter than the pack's 4px, to keep the report to one page
 
 function cellFont(doc: jsPDF, c: Cell, head: boolean) {
   font(doc, c.mono ? 'm' : 'b', head || !!c.bold, TF, c.color || N);
@@ -260,7 +280,8 @@ async function table(f: Flow, head: Cell[], rows: Cell[][], x = X0, w = CW, widt
     rowsH.forEach((h) => { y += h; hline(doc, x, x + w, y); });
     let cx = x + 0.5;
     vline(doc, cx, top, y);
-    cols.forEach((cw) => { cx += cw; vline(doc, cx, top, y); });
+    cols.forEach((cw, i) => { cx += cw; if (i < cols.length - 1) vline(doc, cx, top, y); });
+    vline(doc, x + w - 0.5, top, y);
   };
   const headLines = wrap(head, true);
   let top = f.y + 0.5;
@@ -369,6 +390,79 @@ async function stageImage(drawing: Drawing, view: View, pins: StagePin[]): Promi
 /** Pins are stored as fractions of the drawing; a value over 1 is read as a percentage. */
 const frac = (v: number) => (v > 1 ? v / 100 : v);
 
+/* ---------------- General checks and tyres ---------------- */
+
+/** A small mark beside each general check: green tick OK, red cross damaged, grey dash not fitted, amber ring not checked. */
+function mark(doc: jsPDF, a: string | undefined, x: number, cy: number) {
+  doc.setGState(new GState({ 'stroke-opacity': 1 }));
+  doc.setLineWidth(mm(1.2));
+  if (a === 'ok') {
+    doc.setDrawColor(G);
+    doc.lines([[mm(2.2), mm(2.2)], [mm(4.3), mm(-5)]], mm(x + 0.5), mm(cy), [1, 1], 'S');
+  } else if (a === 'damaged') {
+    doc.setDrawColor(R);
+    doc.line(mm(x + 1), mm(cy - 3), mm(x + 7), mm(cy + 3));
+    doc.line(mm(x + 7), mm(cy - 3), mm(x + 1), mm(cy + 3));
+  } else if (a === 'na') {
+    doc.setDrawColor(SU);
+    doc.line(mm(x + 1), mm(cy), mm(x + 7), mm(cy));
+  } else {
+    doc.setDrawColor(A);
+    doc.circle(mm(x + 4), mm(cy), mm(3), 'S');
+  }
+}
+
+/** The tyres seen from above: front at the top, nearside on the left, each tyre with its tread
+    beside it. Red at or under the legal limit, amber at or under the low tread warning. */
+function tyreDiagram(doc: jsPDF, c: Check, config: Config, x: number, y: number, w: number): number {
+  const keys = tyreKeys(c);
+  const axles = c.axles || 0;
+  if (!keys.length || !axles) {
+    font(doc, 'b', false, 8, SU);
+    doc.text('Axles not recorded', mm(x), mm(base(y, 10, 8)));
+    return y + 14;
+  }
+  const cx = x + w / 2, BW = 56, TW = 11, TH = 17, PITCH = 23;
+  font(doc, 'm', false, 7, SU);
+  doc.text('FRONT', mm(cx), mm(base(y, 8, 7)), { align: 'center' });
+  doc.text('NS', mm(x), mm(base(y, 8, 7)));
+  doc.text('OS', mm(x + w), mm(base(y, 8, 7)), { align: 'right' });
+  const top = y + 10, bodyH = Math.max(96, 46 + axles * PITCH);
+  doc.setGState(new GState({ 'stroke-opacity': 1 }));
+  doc.setDrawColor(N);
+  doc.setLineWidth(mm(1));
+  doc.roundedRect(mm(cx - BW / 2), mm(top), mm(BW), mm(bodyH), mm(4), mm(4), 'S');
+  doc.circle(mm(cx), mm(top + 14), mm(3), 'S'); // the king pin
+  const legal = config.limits.legalTread, low = config.limits.lowTread;
+  for (let n = 1; n <= axles; n++) {
+    const ay = top + bodyH - 14 - (axles - n) * PITCH;
+    doc.setDrawColor(N);
+    doc.setLineWidth(mm(1));
+    doc.line(mm(cx - BW / 2 - 2), mm(ay), mm(cx + BW / 2 + 2), mm(ay));
+    (['ns', 'os'] as const).forEach((side) => {
+      const d = c.tyres[side + '_' + n]?.depth;
+      const colour = d == null ? SU : d <= legal ? R : d <= low ? A : N;
+      const tx = side === 'ns' ? cx - BW / 2 - 3 - TW : cx + BW / 2 + 3;
+      doc.setFillColor(colour);
+      doc.roundedRect(mm(tx), mm(ay - TH / 2), mm(TW), mm(TH), mm(2), mm(2), 'F');
+      font(doc, 'b', colour !== N, 9, colour === N ? N : colour);
+      const label = d == null ? 'not read' : d + 'mm';
+      const lx = side === 'ns' ? tx - 5 : tx + TW + 5;
+      doc.text(label, mm(lx), mm(base(ay - 6, 12, 9)), { align: side === 'ns' ? 'right' : 'left' });
+      font(doc, 'm', false, 6.5, SU);
+      doc.text('AXLE ' + n, mm(lx), mm(base(ay + 4, 8, 6.5)), { align: side === 'ns' ? 'right' : 'left' });
+    });
+  }
+  const ly = top + bodyH + 6;
+  doc.setFillColor(A); doc.rect(mm(x), mm(ly + 2), mm(6), mm(6), 'F');
+  font(doc, 'b', false, 7, SU);
+  doc.text(low + 'mm or less', mm(x + 9), mm(base(ly, 10, 7)));
+  doc.setFillColor(R); doc.rect(mm(x + w / 2), mm(ly + 2), mm(6), mm(6), 'F');
+  doc.text('Legal limit, ' + legal + 'mm', mm(x + w / 2 + 9), mm(base(ly, 10, 7)));
+  bd(doc);
+  return ly + 12;
+}
+
 /* ---------------- The build ---------------- */
 
 export interface PdfOptions {
@@ -380,7 +474,7 @@ export interface PdfOptions {
 
 export async function buildPdf(c: Check, config: Config, opts: PdfOptions = {}): Promise<Blob> {
   const doc = new jsPDF({ unit: 'mm', format: 'a4', orientation: 'portrait', compress: true });
-  doc.setProperties({ title: dirWord(c.direction) + ' · ' + fleetTag(c) + (c.customer ? ' · ' + c.customer : '') });
+  doc.setProperties({ title: dirWord(c.direction) + ' · ' + stcLabel(c.stcNo) + (c.customer ? ' · ' + c.customer : '') });
   const f: Flow = {
     doc, c, y: TOP,
     newPage: async () => {
@@ -394,9 +488,9 @@ export async function buildPdf(c: Check, config: Config, opts: PdfOptions = {}):
   };
   const ensure = async (h: number) => { if (f.y + h > LIMIT) await f.newPage(); };
 
-  /* ---- Page 1 ---- */
   await header(doc, c);
 
+  /* ---- Details, then the readings in the same cells ---- */
   f.y = grid(doc, [
     { label: 'Date', value: dateTime(when(c)) },
     { label: 'Customer', value: c.customer },
@@ -406,39 +500,87 @@ export async function buildPdf(c: Check, config: Config, opts: PdfOptions = {}):
     { label: 'Type', value: typeLine(c, config) },
     { label: 'Rate', value: rateShort(c) },
     { label: 'Checked by', value: c.userName },
-  ], X0, TOP, CW, 4) + GAP;
+  ], X0, TOP, CW, 4, 3) + 6;
+  const reads: GridCell[] = readingsFor(c, config).map((r) => {
+    const v = c.readings[r.id];
+    return { label: r.name, value: v == null ? '' : num(v) + (r.unit ? ' ' + r.unit : '') };
+  });
+  if (strapsApply(c, config)) reads.push({ label: 'Internal straps', value: c.straps == null ? '' : String(c.straps) });
+  reads.push({ label: 'Seal number', value: c.seal || '' });
+  reads.push({ label: 'Doors lock', value: c.doorsLock ? 'Yes' : 'No' });
+  reads.push({ label: 'Cleanliness', value: c.cleanliness || '' });
+  f.y = grid(doc, reads, X0, f.y, CW, Math.min(5, reads.length), 3) + GAP;
 
+  /* ---- General checks (two columns) beside the tyres ---- */
+  const LEFT_W = 300, RX = X0 + LEFT_W + 14, RW = CW - LEFT_W - 14;
+  const colTop = f.y;
+  let left = await heading(doc, 'General checks', colTop, X0, LEFT_W) + 6;
+  const items = itemsFor(c, config);
+  const half = Math.ceil(items.length / 2);
+  const ROW = 11, SUBW = (LEFT_W - 12) / 2;
+  items.forEach((it, i) => {
+    const col = i < half ? 0 : 1, r = i < half ? i : i - half;
+    const x = X0 + col * (SUBW + 12), y = left + r * ROW;
+    const a = c.items[it.id];
+    mark(doc, a, x, y + ROW / 2);
+    const word = a === 'ok' ? '' : a ? answerWord(it, a) : 'Not checked';
+    const bad = a === 'damaged';
+    font(doc, 'b', bad, 8, a === 'na' ? SU : bad ? R : N);
+    const room = SUBW - 12 - (word ? width(doc, word) + 6 : 0);
+    let name = it.name;
+    while (name.length > 3 && width(doc, name) > room) name = name.slice(0, -2) + '…';
+    doc.text(name, mm(x + 11), mm(base(y, ROW, 8)));
+    if (word) {
+      font(doc, 'b', true, 7.5, bad ? R : a === 'na' ? SU : A);
+      doc.text(word, mm(x + SUBW), mm(base(y, ROW, 7.5)), { align: 'right' });
+    }
+    bd(doc);
+    hline(doc, x, x + SUBW, y + ROW);
+  });
+  left += half * ROW;
+
+  let rightY = await heading(doc, 'Tyres', colTop, RX, RW) + 6;
+  rightY = tyreDiagram(doc, c, config, RX, rightY, RW);
+  f.y = Math.max(left, rightY) + GAP;
+
+  /* ---- Damage ---- */
+  await ensure(lh('p', 12) + 4 + GAP + 20);
   f.y = (await heading(doc, 'Damage', f.y)) + GAP;
-
   const live = livePins(c);
   const old = [...c.oldPins].sort((a, b) => a.letter.localeCompare(b.letter));
   if (!live.length && !old.length) {
-    /* Not drawn in the pack: a check with nothing marked says so under the heading. */
     font(doc, 'b', true, 9, N);
     doc.text('No damage', mm(X0), mm(base(f.y, lh('b', 9), 9)));
     f.y += lh('b', 9) + GAP;
   } else {
     const drawing = drawingFor(c.trailerType, config);
-    const views = VIEW_ORDER.filter((v) => live.some((p) => p.view === v) || old.some((o) => o.view === v));
-    for (let i = 0; i < views.length; i += 2) {
-      const rowH = lh('m', 9) + 2 + STAGE_H;
+    /* Nearside and offside always, so a mark on one side reads against the other; front, rear and roof when marked. */
+    const pinsFor = (v: View): StagePin[] => [
+      ...live.filter((p) => p.view === v).map((p) => ({ n: String(p.number), x: frac(p.x), y: frac(p.y), old: false })),
+      ...old.filter((o) => o.view === v).map((o) => ({ n: o.letter, x: frac(o.x), y: frac(o.y), old: true })),
+    ];
+    const marked = (v: View) => live.some((p) => p.view === v) || old.some((o) => o.view === v);
+    /* Nearside and offside always, full size, so a mark on one side reads against the other.
+       Front, rear and roof only when marked, three to a row at a smaller size. */
+    const rowsOf: { views: View[]; w: number }[] = [{ views: ['ns', 'os'], w: STAGE_W }];
+    const ends = VIEW_ORDER.filter((v) => v !== 'ns' && v !== 'os' && marked(v));
+    if (ends.length) rowsOf.push({ views: ends, w: (CW - GAP * 2) / 3 });
+    for (const row of rowsOf) {
+      const sh = (row.w * 220) / 640;
+      const rowH = lh('m', 9) + 2 + sh;
       await ensure(rowH);
-      for (let j = 0; j < 2 && i + j < views.length; j++) {
-        const v = views[i + j];
-        const x = X0 + j * (STAGE_W + GAP);
+      for (let j = 0; j < row.views.length; j++) {
+        const v = row.views[j];
+        const x = X0 + j * (row.w + GAP);
         font(doc, 'm', false, 9, SU);
         doc.text(v.toUpperCase(), mm(x), mm(base(f.y, lh('m', 9), 9)));
-        const pins: StagePin[] = [
-          ...live.filter((p) => p.view === v).map((p) => ({ n: String(p.number), x: frac(p.x), y: frac(p.y), old: false })),
-          ...old.filter((o) => o.view === v).map((o) => ({ n: o.letter, x: frac(o.x), y: frac(o.y), old: true })),
-        ];
         let img: string | null = null;
-        try { img = await stageImage(drawing, v, pins); } catch { img = null; }
-        if (img) doc.addImage(img, 'PNG', mm(x - SPILL), mm(f.y + lh('m', 9) + 2 - SPILL), mm(STAGE_W + SPILL * 2), mm(STAGE_H + SPILL * 2));
+        try { img = await stageImage(drawing, v, pinsFor(v)); } catch { img = null; }
+        const k = row.w / STAGE_W;
+        if (img) doc.addImage(img, 'PNG', mm(x - SPILL * k), mm(f.y + lh('m', 9) + 2 - SPILL * k), mm((STAGE_W + SPILL * 2) * k), mm((STAGE_H + SPILL * 2) * k));
       }
       f.y += rowH + GAP;
     }
-
     const head: Cell[] = ['No', 'Where', 'Type', 'Note', 'Photos in zip'].map((t) => ({ t }));
     const rows: Cell[][] = [
       ...live.map((p) => [
@@ -449,103 +591,52 @@ export async function buildPdf(c: Check, config: Config, opts: PdfOptions = {}):
         { t: o.letter, bold: true, color: OLD }, { t: o.zone }, { t: typeCell(o.type, config) }, { t: oldNote(o) }, { t: '', mono: true },
       ]),
     ];
-    await ensure(19 * 2);
+    await ensure(16 * 2);
     await table(f, head, rows);
     f.y += GAP;
   }
 
-  /* ---- The pages after page 1 (not drawn in the pack) ---- */
-  await f.newPage();
-
-  const section = async (title: string) => {
-    await ensure(lh('p', 12) + 4 + GAP + 19 * 2);
-    f.y = (await heading(doc, title, f.y)) + GAP;
-  };
-
-  const items = itemsFor(c, config);
-  if (items.length) {
-    await section('General items');
-    await table(f, [{ t: 'Item' }, { t: 'Answer' }], items.map((i) => {
-      const a = c.items[i.id];
-      return [{ t: i.name }, { t: answerWord(i, a), bold: a === 'damaged', color: a === 'damaged' ? R : N }];
-    }));
+  /* ---- Anything else written on the check ---- */
+  const extra: Cell[][] = [];
+  if (c.notes && c.notes.trim()) extra.push([{ t: 'Notes', bold: true }, { t: c.notes.trim() }]);
+  if (c.version > 1 && c.reopenReason) extra.push([{ t: 'Reopened v' + c.version, bold: true }, { t: c.reopenReason }]);
+  c.corrections.forEach((x) => extra.push([{ t: 'Correction', bold: true }, { t: dateTime(x.at) + ', ' + x.by + ': ' + x.text }]));
+  if (extra.length) {
+    await ensure(16 * 2);
+    await table(f, [{ t: '' }, { t: '' }], extra, X0, CW, [90, CW - 91]);
     f.y += GAP;
   }
 
-  const keys = tyreKeys(c);
-  if (keys.length) {
-    await section('Tyres');
-    const withMake = keys.some((k) => c.tyres[k]?.make);
-    await table(f, [{ t: 'Tyre' }, { t: 'Tread' }, ...(withMake ? [{ t: 'Make' }] : []), { t: 'Note' }], keys.map((k) => {
-      const d = c.tyres[k]?.depth;
-      const low = isLow(d, config);
-      return [
-        { t: tyreName(k) }, { t: d == null ? '' : d + 'mm', mono: true, bold: low, color: low ? R : N },
-        ...(withMake ? [{ t: c.tyres[k]?.make || '' }] : []), { t: low ? 'Low' : '' },
-      ];
-    }));
-    f.y += GAP;
-  }
-
-  const readRows: Cell[][] = readingsFor(c, config).map((r) => {
-    const v = c.readings[r.id];
-    return [{ t: r.name }, { t: v == null ? '' : num(v) + (r.unit ? ' ' + r.unit : ''), mono: true }, { t: c.readingNotes[r.id] || '' }];
-  });
-  if (strapsApply(c, config)) readRows.push([{ t: 'Internal straps' }, { t: c.straps == null ? '' : String(c.straps), mono: true }, { t: c.readingNotes.straps || '' }]);
-  readRows.push([{ t: 'Seal number' }, { t: c.seal || '', mono: true }, { t: c.readingNotes.seal || '' }]);
-  readRows.push([{ t: 'Doors lock' }, { t: c.doorsLock ? 'Yes' : 'No' }, { t: '' }]);
-  readRows.push([{ t: 'Cleanliness' }, { t: c.cleanliness || '' }, { t: '' }]);
-  await section('Readings');
-  await table(f, [{ t: 'Reading' }, { t: 'Value' }, { t: 'Note' }], readRows);
-  f.y += GAP;
-
-  if (c.notes && c.notes.trim()) {
-    await section('Notes');
-    await table(f, [{ t: 'Note' }], [[{ t: c.notes.trim() }]]);
-    f.y += GAP;
-  }
-
-  if (c.version > 1 && c.reopenReason) {
-    await section('Reopened');
-    await table(f, [{ t: 'Version' }, { t: 'Reason' }], [[{ t: 'v' + c.version }, { t: c.reopenReason }]]);
-    f.y += GAP;
-  }
-
-  if (c.corrections.length) {
-    await section('Corrections');
-    await table(f, [{ t: 'When' }, { t: 'By' }, { t: 'Correction' }], c.corrections.map((x) => [{ t: dateTime(x.at) }, { t: x.by }, { t: x.text }]));
-    f.y += GAP;
-  }
-
-  /* Signature: the image in a stage sized box, the grid cells beside it. */
-  const sigBlock = STAGE_H + 12;
-  await ensure(lh('p', 12) + 4 + GAP + sigBlock);
-  f.y = (await heading(doc, 'Signature', f.y)) + GAP;
+  /* ---- Signature: the box, then who, role, site and when along the same row ---- */
+  const SIG_W = 130, SIG_H = 40;
+  await ensure(SIG_H);
   bd(doc);
-  doc.rect(mm(X0 + 0.5), mm(f.y + 0.5), mm(STAGE_W - 1), mm(sigBlock - 1), 'S');
+  doc.rect(mm(X0 + 0.5), mm(f.y + 0.5), mm(SIG_W - 1), mm(SIG_H - 1), 'S');
+  font(doc, 'm', false, 7, SU);
+  doc.text('SIGNATURE', mm(X0 + 6), mm(base(f.y + 4, lh('m', 7), 7)));
   if (c.signature) {
     try {
       const prop = doc.getImageProperties(c.signature);
-      const bw = STAGE_W - 12, bh = sigBlock - 12;
-      const s = Math.min(bw / prop.width, bh / prop.height);
-      const iw = prop.width * s, ih = prop.height * s;
-      doc.addImage(c.signature, 'PNG', mm(X0 + 6 + (bw - iw) / 2), mm(f.y + 6 + (bh - ih) / 2), mm(iw), mm(ih));
-    } catch { /* an unreadable signature leaves the box empty, and the grid still names who signed */ }
+      const bw = SIG_W - 12, bh = SIG_H - 16;
+      const sc = Math.min(bw / prop.width, bh / prop.height);
+      const iw = prop.width * sc, ih = prop.height * sc;
+      doc.addImage(c.signature, 'PNG', mm(X0 + 6 + (bw - iw) / 2), mm(f.y + 12 + (bh - ih) / 2), mm(iw), mm(ih));
+    } catch { /* an unreadable signature leaves the box empty, and the cells still name who signed */ }
   }
+  /* Cells padded to the signature box's height so the row lines up. */
   grid(doc, [
     { label: 'Signed by', value: c.userName },
-    { label: 'Role', value: c.userRole },
-    { label: 'Site', value: c.siteName },
-    { label: 'Date', value: c.signedAt ? dateTime(c.signedAt) : '' },
-  ], X0 + STAGE_W + GAP, f.y, STAGE_W, 2);
-  f.y += sigBlock + GAP;
+    { label: 'Role and site', value: [c.userRole, c.siteName].filter(Boolean).join(', ') },
+    { label: 'Signed', value: c.signedAt ? dateTime(c.signedAt) : '' },
+  ], X0 + SIG_W + GAP, f.y, CW - SIG_W - GAP, 3, (SIG_H - 2 - lh('m', 7) - lh('b', 9)) / 2);
+  f.y += SIG_H + GAP;
 
   /* ---- Footers, now the page count is known ---- */
   const pages = doc.getNumberOfPages();
   const right = 'Record v' + (opts.recordVersion ?? c.version) + ' · ' + config.email.footer;
   for (let i = 1; i <= pages; i++) {
     doc.setPage(i);
-    footer(doc, 'Page ' + i + ' of ' + pages + (i === 1 && pages > 1 ? ' · General items, tyres and signature follow' : ''), right);
+    footer(doc, 'Page ' + i + ' of ' + pages + (i === 1 && pages > 1 ? ' · Damage continues' : ''), right);
   }
   return doc.output('blob');
 }
