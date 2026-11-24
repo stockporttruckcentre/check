@@ -46,6 +46,8 @@ pack does not say and something had to be built. Each one can be changed.
 - **Pins point at the spot.** The pack places a pin's box with its bottom on the spot, which leaves the turned tip about 6px below it. The tip now lands on the spot, on the phone and on the report.
 - **Report details, from the business.** Company name "STC Sales & Leasing", STC in white and the rest in STC red; "CHECK OUT" in light grey so the trailer number stands out; values in the top cards a weight lighter (Inter SemiBold); the readings cards sized to their content; signature cards with the value centred under the label; tyres drawn from above lying the same way as the nearside drawing, with depths as numbers and the axle number on each axle; the damage key on the Damage heading line; the date in the footer.
 
+- **Still with the supplier.** From the business: when the stock sheet's location is Supplier the trailer has never reached us, so where the person is signed in does not matter. One warning, the same in or out: "Stock sheet says this trailer is still with the supplier", "Confirm this is the correct trailer. Carry on and the office will update the stock sheet." It stands in for the wrong-site warning and, on a check out, for the confirm-the-trailer question, so the same thing is never asked twice. Another of our yards keeps the wrong-site warning. The office sees it flagged.
+
 ## Numbers chosen because the pack gives none
 
 - Blur check: Laplacian variance under 25 on the 400px copy. Dark: mean brightness under 40 of 255. Near copy: 8% of a 64 bit difference hash.

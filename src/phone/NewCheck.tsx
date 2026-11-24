@@ -72,6 +72,9 @@ export function trailerMatch(f: Found, o: { warn?: boolean; rep?: string | null;
 /* A typed STC number is kept as the stock sheet keeps it, digits only, so "STC 999123" is not shown as "STC STC 999123". */
 const typedNo = (q: string) => { const v = q.trim().toUpperCase().replace(/\s+/g, ' '); return /^STC\s?\d+$/.test(v) ? v.replace(/\D/g, '') : v; };
 
+/** The stock sheet still has the trailer with the supplier: it has never reached us. */
+const atSupplier = (t: Trailer) => !!t.location && /supplier/i.test(t.location);
+
 type Stage = 'find' | 'flags' | 'notmine' | 'dup' | 'notfound' | 'nostc' | 'again';
 type Gate = 'nostc' | 'again' | 'notmine' | 'flags';
 interface Last { at: string; by: string | null; ref: string | null; direction: Direction }
@@ -143,9 +146,14 @@ function Find() {
   function flagsFor(t: Trailer) {
     const out: { k: 'err' | 'warn'; title: string; body: string }[] = [];
     if (direction === 'OUT' && motExpired(t)) out.push({ k: 'err', title: t.mot_date ? 'MOT ran out on ' + dayMonYear(t.mot_date) : 'MOT has run out', body: 'It can’t go out on hire like this. Tell the workshop.' });
-    if (t.location && !t.location.toLowerCase().includes(site.toLowerCase())) out.push({ k: 'warn', title: 'Stock sheet says ' + t.location, body: 'You’re at ' + site + '. Carry on and the office will update it.' });
+    /* From the business: a trailer the stock sheet still has at the supplier has never reached us, so one
+       warning, the same in or out and wherever you are. Another of our yards is the wrong-site warning. */
+    if (atSupplier(t)) {
+      out.push({ k: 'warn', title: 'Stock sheet says this trailer is still with the supplier', body: 'Confirm this is the correct trailer. Carry on and the office will update the stock sheet.' });
+    } else if (t.location && !t.location.toLowerCase().includes(site.toLowerCase())) out.push({ k: 'warn', title: 'Stock sheet says ' + t.location, body: 'You’re at ' + site + '. Carry on and the office will update it.' });
     /* From the business: on a sales order, on the Sold List or out on hire, a check out is expected. Otherwise ask. Check ins never ask. */
-    if (direction === 'OUT' && !(t.on_sales_order || t.sold || t.on_hire)) out.push({ k: 'warn', title: config.wording.unexpected_out, body: config.wording.unexpected_out_body });
+    /* The supplier warning already asks to confirm the trailer, so it is not asked twice. */
+    if (direction === 'OUT' && !(t.on_sales_order || t.sold || t.on_hire) && !atSupplier(t)) out.push({ k: 'warn', title: config.wording.unexpected_out, body: config.wording.unexpected_out_body });
     return out;
   }
 
@@ -185,8 +193,9 @@ function Find() {
     if (t) {
       const fl = flagsFor(t);
       if (fl.some((x) => x.title.startsWith('MOT'))) flags.motExpired = t.mot_date || t.mot_text || 'expired';
-      if (fl.some((x) => x.title.startsWith('Stock sheet says'))) flags.wrongSite = t.location || '';
-      if (fl.some((x) => x.title === config.wording.unexpected_out)) flags.unexpected = true;
+      if (atSupplier(t)) flags.atSupplier = t.location || '';
+      else if (fl.some((x) => x.title.startsWith('Stock sheet says'))) flags.wrongSite = t.location || '';
+      if (direction === 'OUT' && !(t.on_sales_order || t.sold || t.on_hire)) flags.unexpected = true;
     } else flags.notOnSheet = true;
     if (t?.no_stc) flags.noStcNumber = true;
     if (done && done.direction === direction) flags.repeat = done.ref || done.at;
