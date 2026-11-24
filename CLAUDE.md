@@ -77,3 +77,7 @@ that they go into the Supabase SQL editor and in which order.
 
 Lead with the answer, then the one sentence that explains it. Short beats
 thorough.
+
+## People
+
+Dean Mann has left STC (November 2026) and has not been replaced. Do not use him in examples, wording or test data. The stock sheet still names "Dean" as sales rep on some trailers; a rep who is not set up in the app gets no "not your trailer" prompt.

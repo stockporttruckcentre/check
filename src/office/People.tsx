@@ -193,7 +193,7 @@ function PersonDialog({ roles, person, onClose, canEdit = true, whyNot }: { role
         {inp('Role', <Choice value={role} options={roleOpts} onChange={setRole} title="Role" disabled={ro} disabledTitle={whyNot} />, { req: true })}
         {inp('Site', <Choice value={site} options={siteOpts} onChange={setSite} title="Site" disabled={ro} disabledTitle={whyNot} />, { req: true })}
       </div>
-      {inp('Names on the spreadsheets', <Field value={aliases} onChange={setAliases} ph="Dean, DAVID REAY" disabled={ro} />)}
+      {inp('Names on the spreadsheets', <Field value={aliases} onChange={setAliases} ph="Dave, DAVID REAY" disabled={ro} />)}
       {note(person ? 'Names on the spreadsheets match this person to the Sales Rep column, separated by commas.' : 'They get an email with a link to sign in. Nothing else to set up.')}
       {err ? banner('err', 'Not saved', err) : null}
       <div style={css('display:flex;justify-content:space-between;gap:10px')}>

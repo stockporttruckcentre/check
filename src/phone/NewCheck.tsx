@@ -42,7 +42,7 @@ export function ChooseDirection() {
 }
 
 /* The match card (source/06 trailerMatch), built from the real stock sheet row. */
-export function trailerMatch(f: Found, o: { warn?: boolean; rep?: string | null; mine?: boolean } = {}) {
+export function trailerMatch(f: Found, o: { warn?: boolean; rep?: string | null; mine?: boolean; plain?: boolean } = {}) {
   const t = f.t;
   if (t.no_stc) o = { ...o, warn: true };
   const cfg = getConfig().config;
@@ -57,7 +57,7 @@ export function trailerMatch(f: Found, o: { warn?: boolean; rep?: string | null;
   if (t.axle_type || axleWord) rows.push(['Axles', [t.axle_type, axleWord].filter(Boolean).join(', ')]);
   rows.push(['MOT', t.mot_date ? dayMonYear(t.mot_date) : t.mot_text || 'Not on the sheet']);
   if (t.location) rows.push(['Location', t.location]);
-  if (o.rep !== undefined && o.rep !== null) rows.push(['Sales rep', o.rep + (o.mine ? ' (you)' : ''), o.mine ? '' : A]);
+  if (o.rep !== undefined && o.rep !== null) rows.push(['Sales rep', o.rep + (o.mine ? ' (you)' : ''), o.mine || o.plain ? '' : A]);
   if (t.on_hire && t.hire_customer) rows.push(['On hire to', t.hire_customer]);
   return (
     <div style={css('border:2px solid ' + (o.warn ? A : G) + ';border-radius:10px;background:' + W + ';padding:16px')}>
@@ -137,9 +137,15 @@ function Find() {
   const me = { name: user.name, aliases: user.aliases };
   const site = user.siteName === 'All sites' ? 'Carrington' : user.siteName;
 
-  function fullName(rep: string) {
+  function person(rep: string) {
     const r = rep.toLowerCase();
-    const p = people.find((x) => x.name.toLowerCase() === r || x.name.split(' ')[0].toLowerCase() === r.split(' ')[0] || x.aliases.some((a) => a.toLowerCase() === r));
+    return people.find((x) => x.name.toLowerCase() === r || x.name.split(' ')[0].toLowerCase() === r.split(' ')[0] || x.aliases.some((a) => a.toLowerCase() === r)) || null;
+  }
+  /* A rep the stock sheet names who is not set up in the app (someone who has left, or not added yet)
+     gets no "not your trailer" prompt: there is nobody to tell. */
+  const knownRep = (rep: string | null) => !!rep && !!person(rep);
+  function fullName(rep: string) {
+    const p = person(rep);
     return p ? p.name : rep;
   }
 
@@ -177,7 +183,7 @@ function Find() {
     if (f?.t.no_stc) gates.push('nostc');
     /* From the business: a trailer checked out last time should be checked in next, and the other way round. */
     if (done && done.direction === direction) gates.push('again');
-    if (f && rep && !isMine(rep, me) && config.alerts.notYourTrailer !== false) gates.push('notmine');
+    if (f && rep && knownRep(rep) && !isMine(rep, me) && config.alerts.notYourTrailer !== false) gates.push('notmine');
     if (f && flagsFor(f.t).length) gates.push('flags');
     const next = gates.find((g) => !pass.includes(g));
     setPassed(pass); setLast(done);
@@ -194,7 +200,7 @@ function Find() {
     const oldPins: OldPin[] = (last?.pins || []).map((p, i) => ({ id: p.id, letter: String.fromCharCode(65 + i), view: p.view as OldPin['view'], x: p.x, y: p.y, zone: p.zone, type: p.type, note: p.note, since: p.since }));
     const rep = t ? repName(t, direction) : null;
     const flags: Check['flags'] = {};
-    if (t && rep && !isMine(rep, me)) flags.notYourTrailer = fullName(rep);
+    if (t && rep && knownRep(rep) && !isMine(rep, me)) flags.notYourTrailer = fullName(rep);
     if (t) {
       const fl = flagsFor(t);
       if (fl.some((x) => x.title.startsWith('MOT'))) flags.motExpired = t.mot_date || t.mot_text || 'expired';
@@ -352,7 +358,7 @@ function Find() {
           ))}
           <div style={css('font-size:14px;color:' + MU)}>Each result says which number matched, so a C number and a ministry number that look alike can&rsquo;t be mixed up.</div>
         </> : null}
-        {!many && match ? trailerMatch(match, { rep: repName(match.t, direction) ? fullName(repName(match.t, direction)!) : undefined, mine: !!repName(match.t, direction) && isMine(repName(match.t, direction)!, me) }) : null}
+        {!many && match ? trailerMatch(match, { rep: repName(match.t, direction) ? fullName(repName(match.t, direction)!) : undefined, mine: !!repName(match.t, direction) && isMine(repName(match.t, direction)!, me), plain: !knownRep(repName(match.t, direction)) }) : null}
         {!many && match && direction === 'IN' && atSupplier(match.t) ? banner('ok', DELIVERY_TITLE, DELIVERY_BODY) : null}
         {!many && !match && starting.length ? (
           <div style={css('margin-top:6px;border:1px solid ' + BL + ';border-radius:8px;background:' + W + ';overflow:hidden')}>
