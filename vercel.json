@@ -1,3 +1,3 @@
 {
-  "rewrites": [{ "source": "/((?!assets/|fonts/|sw.js|workbox-|manifest.webmanifest|icon).*)", "destination": "/index.html" }]
+  "rewrites": [{ "source": "/((?!api/|assets/|fonts/|sw.js|workbox-|manifest.webmanifest|icon|apple-touch-icon|favicon).*)", "destination": "/index.html" }]
 }
