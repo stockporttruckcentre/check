@@ -58,6 +58,7 @@ export function photoFileName(c: Check, section: 'P' | 'D' | 'T' | 'R', nn: numb
 const v2 = (c: Check) => (c.version > 1 ? '_v' + c.version : '');
 export const reportName = (c: Check) => baseName(c) + '_Report' + v2(c) + '.pdf';
 export const detailsName = (c: Check) => baseName(c) + '_Details' + v2(c) + '.csv';
+export const todoName = (c: Check) => baseName(c) + '_Head-office-to-do' + v2(c) + '.txt';
 export const zipName = (c: Check) => baseName(c) + '_' + hyph(c.customer || 'No-customer') + v2(c) + '.zip';
 
 /* ---------------- Where a pin is ---------------- */

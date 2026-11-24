@@ -5,9 +5,10 @@
 
    The body is the rows of the email card in source/08 S_output, as plain text. */
 import type { Check, Config } from '../../data/types';
-import { stcLabel, typeName, subjectFor, reportName, zipName } from '../check';
+import { stcLabel, typeName, subjectFor, reportName, zipName, dirWord } from '../check';
+import { dayMonYear } from '../format';
 import { time } from '../format';
-import { when, rateLong, newPins, damageByView, tyreSummary } from './text';
+import { when, rateLong, newPins, damageByView, tyreSummary, officeTodo } from './text';
 
 /** "C10772 · STC 4418 · 2018 Cartwright curtainsider" */
 function assetLine(c: Check, config: Config): string {
@@ -40,9 +41,20 @@ export function emailRows(c: Check, config: Config): [string, string][] {
 }
 
 export function emailBody(c: Check, config: Config): string {
-  const rows = emailRows(c, config);
+  /* A row with nothing in it (no collecting reg or rate on a check in) is left out. */
+  const rows = emailRows(c, config).filter(([, v]) => v && v.trim());
   const pad = Math.max(...rows.map((r) => r[0].length)) + 2;
-  return rows.map(([k, v]) => (k + ':').padEnd(pad) + v).join('\n') + '\n\n' + reportName(c) + '\n' + zipName(c) + '\n';
+  const todo = officeTodo(c);
+  const list = todo.length ? 'Head office to do:\n' + todo.map((t) => '- ' + t).join('\n') + '\n\n' : '';
+  return rows.map(([k, v]) => (k + ':').padEnd(pad) + v).join('\n') + '\n\n' + list + reportName(c) + '\n' + zipName(c) + '\n';
+}
+
+/** The separate to-do list file for the zip, or null when the check raised nothing for head office. */
+export function officeTodoText(c: Check): string | null {
+  const todo = officeTodo(c);
+  if (!todo.length) return null;
+  const head = 'Head office to do\r\n' + stcLabel(c.stcNo) + ' \u00b7 ' + dirWord(c.direction) + ' \u00b7 ' + dayMonYear(when(c)) + (c.ref ? ' \u00b7 ' + c.ref : '') + '\r\n\r\n';
+  return head + todo.map((t, i) => (i + 1) + '. ' + t).join('\r\n') + '\r\n';
 }
 
 /** Opens the phone's share screen with the files. 'shared' means something was picked,
