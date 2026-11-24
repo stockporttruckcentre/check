@@ -63,6 +63,7 @@ export function csvColumns(c: Check, config: Config): [string, unknown][] {
     ['Unexpected check out', c.flags.unexpected ? 'Yes' : ''],
     ['Wrong site', c.flags.wrongSite || ''],
     ['Out while with supplier on stock sheet', c.flags.atSupplier ? 'Yes' : ''],
+    ['Delivery from supplier', c.flags.delivery ? 'Yes' : ''],
     ['MOT expired', c.flags.motExpired || ''],
     ['Not on stock sheet', c.flags.notOnSheet ? 'Yes' : ''],
     ['No STC number', c.flags.noStcNumber ? 'Yes' : ''],
