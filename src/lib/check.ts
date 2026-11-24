@@ -206,3 +206,7 @@ export function subjectFor(c: Check, config: Config) {
     damage: nd ? nd + ' new damage' : 'no new damage',
   }).replace(' ()', '');
 }
+
+/* From the business: a check in of a trailer the stock sheet still has with the supplier is its delivery, said as good news. */
+export const DELIVERY_TITLE = 'Taking delivery from the supplier';
+export const DELIVERY_BODY = 'The stock sheet has this trailer with the supplier. This check in records it arriving with us.';

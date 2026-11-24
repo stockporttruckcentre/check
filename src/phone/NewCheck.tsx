@@ -10,7 +10,7 @@ import { db, kvGet } from '../lib/db';
 import { findExact, findStarting, findClose, repName, isMine, normKey, type Found } from '../lib/trailers';
 import { useSession } from '../lib/session';
 import { useConfig, getConfig } from '../lib/config';
-import { detectType, typeName, stcLabel, tailLiftFitted, rearDoorsFitted, motExpired, dirWord, steps as stepList, percent } from '../lib/check';
+import { DELIVERY_TITLE, DELIVERY_BODY, detectType, typeName, stcLabel, tailLiftFitted, rearDoorsFitted, motExpired, dirWord, steps as stepList, percent } from '../lib/check';
 import { dayMonYear, time } from '../lib/format';
 import { fill } from '../data/defaults';
 import { uuid } from '../lib/ids';
@@ -199,6 +199,7 @@ function Find() {
       const fl = flagsFor(t);
       if (fl.some((x) => x.title.startsWith('MOT'))) flags.motExpired = t.mot_date || t.mot_text || 'expired';
       if (direction === 'OUT' && atSupplier(t)) flags.atSupplier = t.location || '';
+      if (direction === 'IN' && atSupplier(t)) flags.delivery = true;
       else if (fl.some((x) => x.title.startsWith('Stock sheet says'))) flags.wrongSite = t.location || '';
       if (direction === 'OUT' && !(t.on_sales_order || t.sold || t.on_hire)) flags.unexpected = true;
     } else flags.notOnSheet = true;
@@ -352,6 +353,7 @@ function Find() {
           <div style={css('font-size:14px;color:' + MU)}>Each result says which number matched, so a C number and a ministry number that look alike can&rsquo;t be mixed up.</div>
         </> : null}
         {!many && match ? trailerMatch(match, { rep: repName(match.t, direction) ? fullName(repName(match.t, direction)!) : undefined, mine: !!repName(match.t, direction) && isMine(repName(match.t, direction)!, me) }) : null}
+        {!many && match && direction === 'IN' && atSupplier(match.t) ? banner('ok', DELIVERY_TITLE, DELIVERY_BODY) : null}
         {!many && !match && starting.length ? (
           <div style={css('margin-top:6px;border:1px solid ' + BL + ';border-radius:8px;background:' + W + ';overflow:hidden')}>
             {starting.map((f, i) => {

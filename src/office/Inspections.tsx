@@ -278,7 +278,7 @@ function Record({ row, onChanged, onOpen }: { row: CheckRow; onChanged: () => vo
     f.notOnSheet ? 'Not on the stock sheet' : '', f.noStcNumber ? 'No STC number on the stock sheet' : '',
     f.repeat ? (check.direction === 'OUT' ? 'Checked out' : 'Checked in') + ' last time too (' + f.repeat + ')' : '',
     f.notYourTrailer ? 'Sales rep on the sheet: ' + f.notYourTrailer : '', f.unexpected ? 'Not on a sales order, sold or on hire' : '',
-    f.wrongSite ? 'Stock sheet says ' + f.wrongSite : '', f.atSupplier ? 'Checked out while the stock sheet had it with the supplier' : '', f.motExpired ? 'MOT run out (' + f.motExpired + ')' : '',
+    f.wrongSite ? 'Stock sheet says ' + f.wrongSite : '', f.atSupplier ? 'Checked out while the stock sheet had it with the supplier' : '', f.delivery ? 'Delivery from the supplier' : '', f.motExpired ? 'MOT run out (' + f.motExpired + ')' : '',
   ].filter(Boolean);
   const card = (t: string, inner: ReactNode, big?: boolean) => (
     <div style={css('background:' + W + ';border:1px solid ' + BL + ';border-radius:8px;padding:16px' + (big ? ';font-size:14px;line-height:1.7' : ''))}>

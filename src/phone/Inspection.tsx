@@ -7,6 +7,7 @@ import { css } from '../kit/css';
 import { btn, footer, scroll, topbar, stepRow, sheet, banner, photo, sg, ic, srcTag, plate, toast, badge, type SaveState } from '../kit/kit';
 import { N, W, R, BL, MU, SU, G, A, A1, R7, PT, MO, N1, N5, PA } from '../kit/tokens';
 import { useCheck, usePhotoUrl } from './useCheck';
+import { DELIVERY_TITLE, DELIVERY_BODY } from '../lib/check';
 import Camera, { type Taken } from './Camera';
 import { configFor, isPreview } from '../lib/config';
 import { useSession } from '../lib/session';
@@ -97,6 +98,7 @@ export function Hub() {
       {topbar(dirWord(c.direction) + ' · ' + fleetTag(c), { close: true, save: x.save, prog: x.pr.pct, onBack: () => setLeave(true) })}
       {scroll(<>
         {c.reopenReason ? banner('info', 'Reopened: ' + c.reopenReason, 'When you send it, the office gets it as version ' + c.version + '. The original stays on record.') : null}
+        {c.flags.delivery ? banner('ok', DELIVERY_TITLE, DELIVERY_BODY) : null}
         {c.flags.notOnSheet ? banner('warn', 'Not on the stock sheet', 'The office will see this flagged.') : null}
         {c.flags.noStcNumber ? banner('warn', 'No STC number yet', 'The office will see this flagged.') : null}
         {c.flags.repeat ? banner('warn', (c.direction === 'OUT' ? 'Checked out' : 'Checked in') + ' last time too', 'The office will see this flagged.') : null}
