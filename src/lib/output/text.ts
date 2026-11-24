@@ -106,3 +106,25 @@ export function answerWord(item: ItemDef, a: ItemAnswer | undefined): string {
   if (a === 'na') return 'Not fitted';
   return item.answer === 'ok_fault_na' ? 'Fault' : 'Damaged';
 }
+
+/* ---------------- Head office to do ---------------- */
+
+/** What the office has to do on its side because of something this check raised: the stock
+    sheet to put right, a number to add, an MOT to book. Only things they must act on; empty
+    when there are none, and then there is no list at all. From the business. */
+export function officeTodo(c: Check): string[] {
+  const f = c.flags || {};
+  const stc = stcLabel(c.stcNo), site = c.siteName, out = c.direction === 'OUT';
+  const todo: string[] = [];
+  if (f.notOnSheet) todo.push('Add ' + stc + ' to the stock sheet. It was checked ' + (out ? 'out' : 'in') + ' at ' + site + ' but isn\u2019t on it.');
+  if (f.noStcNumber) todo.push('Give chassis ' + (c.trailer?.chassis_no || stc) + ' an STC number on the stock sheet.');
+  if (f.delivery) todo.push('Update the stock sheet location for ' + stc + ' from Supplier to ' + site + '. It has been delivered.');
+  if (f.wrongSite) todo.push(out
+    ? 'Correct the stock sheet location for ' + stc + '. It said ' + f.wrongSite + ', but the trailer was checked out at ' + site + '.'
+    : 'Update the stock sheet location for ' + stc + ' from ' + f.wrongSite + ' to ' + site + '.');
+  if (f.atSupplier) todo.push('Correct the stock sheet for ' + stc + '. It still had the trailer with the supplier, but it was checked out at ' + site + '.');
+  if (f.unexpected) todo.push('Update the stock sheet for ' + stc + '. It was checked out but isn\u2019t on a sales order, the Sold List or on hire.');
+  if (f.motExpired && out) todo.push('Arrange an MOT for ' + stc + '. It went out with its MOT run out' + (/^\d{4}-/.test(f.motExpired) ? ' on ' + dayMonYear(f.motExpired) : '') + '.');
+  if (f.repeat) todo.push('Check the records for ' + stc + '. It was checked ' + (out ? 'out' : 'in') + ' twice in a row, so a check ' + (out ? 'in' : 'out') + ' may be missing (last one ' + f.repeat + ').');
+  return todo;
+}

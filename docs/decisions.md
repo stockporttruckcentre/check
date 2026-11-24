@@ -50,6 +50,8 @@ pack does not say and something had to be built. Each one can be changed.
 
 - **App icon.** From the business: the STC logo always sits on dark, so it is on the app's navy. Other STC apps use the plain logo, so this one carries CHECKS under it in white Panton ExtraBold. Standard 192 and 512 icons, a maskable 512 with both inside Android's round safe zone, a 180 iPhone home screen icon and a 64 browser icon; the 32 browser tab icon is the logo alone, as a word cannot be read that small.
 
+- **Head office to do.** From the business: when a check raises something the office has to act on (the stock sheet location to update after a delivery from the supplier or a check in from another yard, a trailer to add to the stock sheet, an STC number to give, a check out of a trailer not on a sales order, an MOT to arrange, a possibly missed check), it is listed in the email under "Head office to do" and in its own file in the zip, {base}_Head-office-to-do.txt. Not on the check sheet PDF. No list and no file when there is nothing to do. Rows with nothing in them are left out of the email.
+
 ## Numbers chosen because the pack gives none
 
 - Blur check: Laplacian variance under 25 on the 400px copy. Dark: mean brightness under 40 of 255. Near copy: 8% of a 64 bit difference hash.

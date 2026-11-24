@@ -2,6 +2,7 @@
      {zipName}
        {reportName}
        {detailsName}
+       {todoName}             only when there is something for head office to do
        1-Photos/              section P
        2-Damage/              section D
        3-Tyres-and-readings/  sections T and R
@@ -9,7 +10,8 @@
    compressed JPEGs, so they are stored, not compressed again. */
 import JSZip from 'jszip';
 import type { Check, Config, PhotoMeta, PhotoSection } from '../../data/types';
-import { reportName, detailsName } from '../check';
+import { reportName, detailsName, todoName } from '../check';
+import { officeTodoText } from './email';
 import { buildCsv } from './csv';
 import { buildPdf } from './pdf';
 
@@ -23,6 +25,9 @@ export async function buildZip(
   const report = pdf || (await buildPdf(c, config, { photos: live }));
   zip.file(reportName(c), report, { compression: 'DEFLATE' });
   zip.file(detailsName(c), buildCsv(c, config), { compression: 'DEFLATE' });
+  /* The office's to-do list, only when the check raised something for them to do. */
+  const todo = officeTodoText(c);
+  if (todo) zip.file(todoName(c), todo, { compression: 'DEFLATE' });
   /* The three folders are always there, so the office always sees the same tree. */
   for (const name of new Set(Object.values(FOLDERS))) zip.folder(name);
   for (const p of live) {
