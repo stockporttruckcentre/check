@@ -70,7 +70,7 @@ function dist(a: string, b: string): number {
   return 2;
 }
 
-/** "This is Dean Mann's trailer": the sheet's name matched to a person, or null when it is nobody's in particular. */
+/** "This is Dave Reay's trailer": the sheet's name matched to a person, or null when it is nobody's in particular. */
 export function repName(t: Trailer, direction: 'OUT' | 'IN'): string | null {
   const raw = ((direction === 'OUT' && t.on_hire ? t.hire_salesman : null) || t.sales_rep || t.hire_salesman || '').trim();
   if (!raw || /^(stc|rental|ex[ -]?rental|tbc|n\/?a)$/i.test(raw)) return null;

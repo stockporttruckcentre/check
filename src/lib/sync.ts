@@ -214,7 +214,7 @@ async function pullPhotos(checkId: string) {
   }
 }
 
-/** Names, so "Dean" on the stock sheet reads "This is Dean Mann's trailer". */
+/** Names, so "Dave" on the stock sheet reads "This is Dave Reay's trailer". */
 export async function pullPeople() {
   const { data } = await supabase.from('people').select('name, aliases').is('deleted_at', null);
   await kvSet('people', (data || []).map((p) => ({ name: p.name as string, aliases: (p.aliases as string[]) || [] })));
