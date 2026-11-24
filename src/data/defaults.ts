@@ -73,13 +73,15 @@ export const DEFAULT_CONFIG: Config = {
     { id: 'curtainsider', name: 'Curtainsider', drawing: 'trailer', match: 'curtain|psk|clearspan|taut' },
   ],
   /* BUILDER: zones follow the lines already in the pack's drawings (the panel lines at
-     x 170, 320 and 470, the chassis at y 150, the wheels from x 454). Coordinates are
+     x 170, 320 and 470, the chassis at y 150, the sideguard from x 200 to 440 at y 166, the
+     wheels from x 454). Coordinates are
      fractions of the 640 by 220 drawing. First match wins. */
   /* Rear and front zones narrowed with their drawings (END_SCALE 0.55 about the middle), from the business. */
   zones: {
     ns: [
       { name: 'landing gear', x0: 0.19, y0: 0.68, x1: 0.28, y1: 1 },
       { name: 'rear axles', x0: 0.69, y0: 0.68, x1: 0.97, y1: 1 },
+      { name: 'sideguard', x0: 0.29, y0: 0.74, x1: 0.69, y1: 0.92 },
       { name: 'chassis', x0: 0.03, y0: 0.68, x1: 0.97, y1: 1 },
       { name: 'front panel', x0: 0.03, y0: 0, x1: 0.266, y1: 0.68 },
       { name: 'middle', x0: 0.266, y0: 0, x1: 0.734, y1: 0.68 },
@@ -88,6 +90,7 @@ export const DEFAULT_CONFIG: Config = {
     os: [
       { name: 'landing gear', x0: 0.72, y0: 0.68, x1: 0.81, y1: 1 },
       { name: 'rear axles', x0: 0.03, y0: 0.68, x1: 0.31, y1: 1 },
+      { name: 'sideguard', x0: 0.31, y0: 0.74, x1: 0.71, y1: 0.92 },
       { name: 'chassis', x0: 0.03, y0: 0.68, x1: 0.97, y1: 1 },
       { name: 'front panel', x0: 0.734, y0: 0, x1: 0.97, y1: 0.68 },
       { name: 'middle', x0: 0.266, y0: 0, x1: 0.734, y1: 0.68 },
