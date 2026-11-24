@@ -48,6 +48,8 @@ pack does not say and something had to be built. Each one can be changed.
 
 - **Still with the supplier.** From the business: a check in of a trailer the stock sheet has with the supplier is its delivery, so it is said as good news, in green on the match card and at the top of the check: "Taking delivery from the supplier", "The stock sheet has this trailer with the supplier. This check in records it arriving with us." The office sees it as a delivery. A check out of one warns, and never blocks, because the stock sheet is typed by hand and can be behind: "Stock sheet says this trailer hasn't been delivered yet", "It's still with the supplier on the stock sheet. Check it's here and this is the correct trailer. Carry on and the office will update the stock sheet." That warning stands in for the confirm-the-trailer question, so it is not asked twice. Another of our yards keeps the wrong-site warning.
 
+- **App icon.** From the business: the STC logo they supplied, on white, which shows the oval and its shadow (on navy they disappear). Standard 192 and 512 icons, a maskable 512 with the logo inside Android's round safe zone, a 180 iPhone home screen icon and 32 and 64 browser tab icons, all in public/.
+
 ## Numbers chosen because the pack gives none
 
 - Blur check: Laplacian variance under 25 on the 400px copy. Dark: mean brightness under 40 of 255. Near copy: 8% of a 64 bit difference hash.
