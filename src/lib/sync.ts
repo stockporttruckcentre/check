@@ -8,7 +8,7 @@ import { useSyncExternalStore } from 'react';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { db, kvGet, kvSet, type DeviceUser, type LastCheck, type PhotoRow } from './db';
 import { supabase } from './supabase';
-import { clientFor, getSession } from './session';
+import { clientFor, getSession, liveSession, sessionLost, onLive } from './session';
 import { getConfig, refreshConfig } from './config';
 import type { Check, Trailer } from '../data/types';
 
@@ -154,6 +154,7 @@ async function fetchAll<T>(sb: SupabaseClient, table: string, select: string): P
 
 export async function pullTrailers() {
   const rows = await fetchAll<Trailer>(supabase, 'trailers_v', '*');
+  if (!rows.length) return;   // nothing back means not signed in, never an empty stock sheet
   await db.transaction('rw', db.trailers, async () => { await db.trailers.clear(); await db.trailers.bulkPut(rows); });
   const sync = await supabase.from('sheet_sync').select('*').eq('source', 'stock').maybeSingle();
   set({ trailersAt: sync.data?.updated_at || null, stockSavedBy: sync.data?.updated_by || null });
@@ -163,6 +164,8 @@ export async function pullTrailers() {
 export async function pullLastChecks() {
   const [{ data, error }, by] = await Promise.all([supabase.rpc('last_checks'), supabase.rpc('last_check_by')]);
   if (error) throw error;
+  if (by.error) throw by.error;
+  if (!(data || []).length) return;
   const who = new Map(((by.data || []) as { stc_no: string; ref: string | null; person_name: string | null }[]).map((r) => [r.stc_no, r]));
   const rows = ((data || []) as LastCheck[]).map((r) => ({ ...r, ref: who.get(r.stc_no)?.ref || null, person_name: who.get(r.stc_no)?.person_name || null }));
   await db.transaction('rw', db.lastChecks, async () => { await db.lastChecks.clear(); await db.lastChecks.bulkPut(rows); });
@@ -189,7 +192,7 @@ export async function pullMine() {
   behind.forEach((c) => syncDraftSoon(c.id));
   /* Drafts here that the office had: finished or deleted somewhere else? */
   const mine = await db.checks.filter((c) => c.status === 'draft' && c.userId === u.personId && !!c.syncedAt).toArray();
-  if (!mine.length) return;
+  if (!mine.length || !(await liveSession())) return;
   const { data: there, error } = await supabase.from('checks').select('id, status, ref, sent_at, data').in('id', mine.map((c) => c.id));
   if (error) return;
   const byId = new Map((there || []).map((x) => [x.id as string, x]));
@@ -222,6 +225,7 @@ export async function pullPeople() {
 
 export async function pullAll() {
   if (!navigator.onLine || !getSession().user || state.pulling) return;
+  if (!(await liveSession())) { await sessionLost(); return; }
   set({ pulling: true, error: null });
   try {
     await Promise.all([refreshConfig(), pullTrailers(), pullLastChecks(), pullMine(), pullPeople()]);
@@ -250,6 +254,7 @@ let watching = false;
 export function startSync() {
   if (watching) return;
   watching = true;
+  onLive(() => { void pullAll(); });
   kvGet<{ at: string | null; by: string | null }>('trailersAt').then((v) => v && set({ trailersAt: v.at, stockSavedBy: v.by }));
   window.addEventListener('online', () => { kick(); void pullAll(); });
   document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') { kick(); void pullAll(); } });

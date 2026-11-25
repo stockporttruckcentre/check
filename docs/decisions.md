@@ -54,6 +54,9 @@ pack does not say and something had to be built. Each one can be changed.
 
 - **Damage from the checklist, taps and drags.** From the business: answering Damaged on an item that is always in the same place puts the mark there (ITEM_PLACES in src/lib/check.ts), asking "{Item}: which side?" or "{Item}: which one?" first where it could be either, with "I'll tap where it is" to skip. Plates, lights and markers along the side, and anything inside, are left to a tap. A tap on the drawing always adds a mark; a mark moves by dragging, which starts the moment a finger moves on it (holding still for 300ms also works). The rear view names its left and right wheels (migration 010).
 
+- **A cancelled sign in never empties the phone.** The app keeps each refreshed sign in token, locked or not, and reuses the one it already holds on unlock, because handing Supabase an old token makes it cancel the whole sign in. Before pulling it checks the sign in is live; with no sign in the server answers with nothing, and that is never taken as an empty stock sheet, no history or a deleted check. If the sign in has gone, Home says "Sign in again to carry on" and a code to the person's own email puts them back in with the PIN they already have.
+- **Started time.** Unfinished checks say "started 09:41" on the day and "started 24 Nov" after it.
+
 ## Numbers chosen because the pack gives none
 
 - Blur check: Laplacian variance under 25 on the 400px copy. Dark: mean brightness under 40 of 255. Near copy: 8% of a 64 bit difference hash.

@@ -8,12 +8,12 @@ import { btn, scroll, topbar, bnav, stepRow, banner, chip, card, badge, fleet, p
 import { N, W, BL, MU, PT, MO, N5, SU, BD } from '../kit/tokens';
 import { db } from '../lib/db';
 import type { Check } from '../data/types';
-import { useSession, signOut, lockPhone, perms } from '../lib/session';
+import { useSession, signOut, lockPhone, perms, signInAgain } from '../lib/session';
 import { useConfig, configFor } from '../lib/config';
 import { useSync, kick, pullAll } from '../lib/sync';
 import { supabase } from '../lib/supabase';
 import { steps as stepList, percent, fleetTag, dirWord, typeName, stcLabel } from '../lib/check';
-import { greeting, time, when, num } from '../lib/format';
+import { greeting, time, when, num, started } from '../lib/format';
 import { useOnline } from './useCheck';
 
 export const screen = 'height:100dvh;display:flex;flex-direction:column;max-width:600px;margin:0 auto;background:#F7F7F5;position:relative;overflow:hidden';
@@ -69,6 +69,7 @@ export function Home() {
           style={css('width:48px;height:48px;display:flex;align-items:center;justify-content:center;background:transparent;border:0;color:' + N)}>{ic('user', 26)}</button>
       ) })}
       {scroll(<>
+        {user && !user.session && online ? banner('warn', 'Sign in again to carry on', 'This phone’s sign in has run out. Your work is safe here. We’ll send a code to ' + user.email + '.', 'Send me a code', async () => { const e = await signInAgain(); if (e) alert(e); }) : null}
         {!online && waiting.length ? banner('off', 'No signal', 'Keep going. Everything saves on this phone and sends when signal comes back.') : null}
         {failed.length ? banner('err', failed.length === 1 ? '1 inspection couldn’t send' : failed.length + ' inspections couldn’t send', 'They’re safe on this phone. It will try again.', 'Try again now', kick) : null}
         {notes.map((n) => <div key={n.id}>{banner('info', n.body.by + ' checked ' + (n.body.direction === 'OUT' ? 'out' : 'in') + ' your trailer STC ' + n.body.stc, 'Ref ' + n.body.ref + '. It’s noted on the record.', 'Got it', () => dismiss(n.id))}</div>)}
@@ -78,7 +79,7 @@ export function Home() {
         {unfinished.length ? <div style={css('font-weight:800;font-size:15px;margin-top:6px')}>Carry on</div> : null}
         {unfinished.slice(0, 3).map((c) => {
           const p = progressOf(c);
-          return <div key={c.id}>{stepRow(fleetTag(c) + ' · ' + dirWord(c.direction), p.done + ' of ' + p.total + ' steps · started ' + time(c.createdAt), 'todo', { onClick: () => nav('/check/' + c.id) })}</div>;
+          return <div key={c.id}>{stepRow(fleetTag(c) + ' · ' + dirWord(c.direction), p.done + ' of ' + p.total + ' steps · started ' + started(c.createdAt), 'todo', { onClick: () => nav('/check/' + c.id) })}</div>;
         })}
         {waiting.length ? <div style={css('font-weight:800;font-size:15px;margin-top:6px')}>Waiting to send</div> : null}
         {waiting.map((c) => <div key={c.id}>{stepRow(fleetTag(c) + ' · ' + dirWord(c.direction), 'Sends when there’s signal', 'pend', { onClick: () => nav('/check/' + c.id + '/sending') })}</div>)}
@@ -103,7 +104,7 @@ export function Unfinished() {
             const p = progressOf(c);
             const cfg = configFor(c.configVersion);
             return <div key={c.id}>{card(<>
-              <div style={css('display:flex;justify-content:space-between;gap:10px;align-items:center')}>{badge('UNFINISHED', 'draft')}<span style={css('font-size:14px;color:' + MU)}>Started {time(c.createdAt)}</span></div>
+              <div style={css('display:flex;justify-content:space-between;gap:10px;align-items:center')}>{badge('UNFINISHED', 'draft')}<span style={css('font-size:14px;color:' + MU)}>Started {started(c.createdAt)}</span></div>
               <div style={css('display:flex;align-items:center;gap:12px;margin-top:14px')}>{fleet(fleetTag(c))}<div style={css('font-weight:700;font-size:17px')}>{dirWord(c.direction)} &middot; {typeName(c.trailerType, cfg).replace('Curtainsider', 'Curtainsider')}</div></div>
               {c.userId !== user?.personId ? <div style={css('font-size:14px;color:' + MU + ';margin-top:8px')}>Started by {c.userName}</div> : null}
               {progbar(p.pct, p.done + ' of ' + p.total + ' steps')}

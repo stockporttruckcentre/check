@@ -11,7 +11,7 @@ import { findExact, findStarting, findClose, repName, isMine, normKey, type Foun
 import { useSession } from '../lib/session';
 import { useConfig, getConfig } from '../lib/config';
 import { DELIVERY_TITLE, DELIVERY_BODY, detectType, typeName, stcLabel, tailLiftFitted, rearDoorsFitted, motExpired, dirWord, steps as stepList, percent } from '../lib/check';
-import { dayMonYear, time } from '../lib/format';
+import { dayMonYear, time, started } from '../lib/format';
 import { fill } from '../data/defaults';
 import { uuid } from '../lib/ids';
 import type { Check, Direction, Trailer, TrailerTypeId, OldPin } from '../data/types';
@@ -244,7 +244,7 @@ function Find() {
         {bar}{scroll(<div style={css('height:64px;border-radius:8px;border:3px solid ' + N + ';background:' + W + ';display:flex;align-items:center;padding:0 16px;font-family:' + MO + ';font-weight:800;font-size:26px')}>{q}</div>)}
         {sheet(<>
           <div style={css('font-family:' + PT + ';font-weight:800;font-size:22px')}>There&rsquo;s already an unfinished {dirWord(direction).toLowerCase()} for {dup.cNo || stcLabel(dup.stcNo)}</div>
-          <div style={css('font-size:17px;line-height:1.45')}>Started by {dup.userId === user.personId ? 'you' : dup.userName} at {time(dup.createdAt)}, {p.done} of {p.total} steps done.</div>
+          <div style={css('font-size:17px;line-height:1.45')}>Started by {dup.userId === user.personId ? 'you' : dup.userName} {started(dup.createdAt).includes(':') ? 'at' : 'on'} {started(dup.createdAt)}, {p.done} of {p.total} steps done.</div>
           {btn('Carry on with that one', 'p', { onClick: () => nav('/check/' + dup.id, { replace: true }) })}
           {btn('Start again (deletes it)', 'dg', { h: 56, onClick: async () => { await db.checks.delete(dup.id); await db.photos.where('checkId').equals(dup.id).modify({ removedAt: new Date().toISOString() }); setDup(null); setStage('find'); } })}
         </>, { onClose: () => setStage('find') })}
