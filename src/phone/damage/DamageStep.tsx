@@ -20,7 +20,7 @@ import { stage, vtabs, legend, type View } from '../../kit/drawings';
 import { N, R, R7, W, MU, SU, BL, N05, PT, IN, MO } from '../../kit/tokens';
 import type { Check, DamagePin, OldPin, PhotoMeta } from '../../data/types';
 import { useConfig, configFor } from '../../lib/config';
-import { zoneOf, zoneFileLabel, damageName, drawingFor, typeName, photoFor, photoFileName, fleetTag, dirWord, VIEW_SHORT } from '../../lib/check';
+import { zoneOf, zoneFileLabel, damageName, drawingFor, typeName, photoFor, photoFileName, fleetTag, dirWord, VIEW_SHORT, VIEW_NAMES, itemPlace } from '../../lib/check';
 import { dayMon } from '../../lib/format';
 import { uuid } from '../../lib/ids';
 import { db } from '../../lib/db';
@@ -32,7 +32,7 @@ import { lbar, pinItem, rail, kinds, slot, loupe, hint, rotArt, noteBox } from '
 import { useLastCheck, useSignedUrl, lastPinPhoto } from './remote';
 
 type Phase = 'ask' | 'mark' | 'details' | 'gallery';
-type Sheet = { k: 'verdict'; id: string } | { k: 'phrases' } | { k: 'delPhoto'; id: string } | null;
+type Sheet = { k: 'verdict'; id: string } | { k: 'phrases' } | { k: 'delPhoto'; id: string } | { k: 'where' } | null;
 interface Toast { kind: ToastKind; text: string; act?: string; onAct?: () => void; key: number }
 
 const PORTRAIT = 'position:relative;height:100dvh;overflow:hidden;background:#F7F7F5;display:flex;flex-direction:column;font-family:' + IN + ';color:' + N + ';letter-spacing:-0.01em';
@@ -99,12 +99,17 @@ export default function DamageStep() {
   const stageRef = useRef<HTMLDivElement>(null);
   const itemDone = useRef(false);
 
-  /* Arrived from General items: the answer is yes, straight to the marker. */
+  /* Arrived from General items: the answer is yes, straight to the marker. Where the item is always in
+     the same place, the mark is put there for them, asking first which side where it could be either. */
   useEffect(() => {
     if (!check || !item || itemDone.current) return;
     itemDone.current = true;
     if (check.damageAnswer !== 'yes') update((c) => { c.damageAnswer = 'yes'; });
-  }, [check, item, update]);
+    const place = itemPlace(item, drawingFor(check.trailerType, config));
+    if (!place || check.pins.some((p) => !p.removedAt && p.itemId === item)) return;
+    if (place.ask === null) placePin(place.view, place.x, place.y, place.name);
+    else setSh({ k: 'where' });
+  }, [check, item, update]); // eslint-disable-line
   useEffect(() => () => window.clearTimeout(toastTimer.current), []);
 
   function showToast(kind: ToastKind, text: string, ms: number, act?: string, onAct?: () => void) {
@@ -162,11 +167,14 @@ export default function DamageStep() {
       if (fileName !== ph.fileName) await db.photos.update(ph.id, { fileName });
     }
   }
-  function dropPin(x: number, y: number) {
+  function dropPin(x: number, y: number) { placePin(view, x, y); }
+  /** A new mark on a view; `name` names its place when it came from a checklist item. */
+  function placePin(v: View, x: number, y: number, name?: string) {
     const pid = uuid();
+    setView(v);
     update((d) => {
       const n = Math.max(d.nextPin || 1, ...d.pins.map((p) => p.number + 1));
-      d.pins.push({ id: pid, number: n, view, x, y, zone: zoneOf(view, x, y, config), type: null, note: '', status: 'new', itemId: item || null, removedAt: null });
+      d.pins.push({ id: pid, number: n, view: v, x, y, zone: name ? VIEW_NAMES[v] + ', ' + name : zoneOf(v, x, y, config), type: null, note: '', status: 'new', itemId: item || null, removedAt: null });
       d.nextPin = n + 1;
       d.damageAnswer = 'yes';
     });
@@ -221,8 +229,8 @@ export default function DamageStep() {
   }
   const nextShot = (pid: string) => Math.max(2, ...dPhotos(pid).map((x) => x.shot)) + 1;
 
-  /* Hold a pin for 300ms, then drag it. A quick tap selects it instead (screen B), where
-     a tap on the drawing places it: so holding is never the only way to move a pin. */
+  /* Put a finger on a pin and drag: it follows straight away. Holding still for 300ms also picks it
+     up. A quick tap selects it instead (screen B). */
   function holdPin(e: RPointerEvent, p: DamagePin) {
     e.stopPropagation();
     const pid = e.pointerId, sx = e.clientX, sy = e.clientY;
@@ -243,8 +251,14 @@ export default function DamageStep() {
     const mv = (ev: PointerEvent) => {
       if (ev.pointerId !== pid) return;
       if (!dragging) {
-        if (Math.hypot(ev.clientX - sx, ev.clientY - sy) > 10) { cancelled = true; window.clearTimeout(t); }
-        return;
+        if (cancelled || Math.hypot(ev.clientX - sx, ev.clientY - sy) < 6) return;
+        /* Moved before the hold finished: that is a drag too. */
+        window.clearTimeout(t);
+        dragging = true;
+        const f0 = norm(sx, sy);
+        off = f0 ? { x: f0.x - p.x, y: f0.y - p.y } : off;
+        setSel(p.id); setPhase('mark');
+        setDrag({ id: p.id, x: p.x, y: p.y, w });
       }
       ev.preventDefault();
       const f = norm(ev.clientX, ev.clientY);
@@ -293,8 +307,8 @@ export default function DamageStep() {
     }
     return out;
   }
+  /* A tap always adds a mark; a mark is moved by dragging it (source/08 B). */
   function onTap(x: number, y: number) {
-    if (moving && selPin) { if (selPin.view === view) movePin(selPin.id, x, y); return; }
     dropPin(x, y);
   }
   function pickView(v: View) { setView(v); if (moving) setSel(null); }
@@ -389,6 +403,19 @@ export default function DamageStep() {
           <div style={css('font-size:15px;color:' + MU + ';margin-top:10px')}>Quick phrases add words to the note. The phone keyboard&rsquo;s microphone works for voice notes.</div>
         </div>
       </>, { onClose: () => setSh(null), label: 'Describe the damage' }) : null}
+      {sh?.k === 'where' && item ? (() => {
+        const place = itemPlace(item, drawing);
+        const it = config.items.find((x) => x.id === item);
+        if (!place || place.ask === null) return null;
+        const pick = (v: View, x: number, y: number, name: string) => { setSh(null); placePin(v, x, y, name); };
+        return sheet(<>
+          <div style={css('font-family:' + PT + ';font-weight:800;font-size:22px')}>{(it?.name || 'Damage') + (place.ask === 'side' ? ': which side?' : ': which one?')}</div>
+          {place.ask === 'side'
+            ? <>{btn('Nearside', 'p', { onClick: () => pick('ns', place.x, place.y, place.name) })}{btn('Offside', 'p', { onClick: () => pick('os', 1 - place.x, place.y, place.name) })}</>
+            : <>{btn('Left, as you look at the ' + place.view, 'p', { onClick: () => pick(place.view, place.left[0], place.left[1], place.name[0]) })}{btn('Right, as you look at the ' + place.view, 'p', { onClick: () => pick(place.view, place.right[0], place.right[1], place.name[1]) })}</>}
+          {btn('I’ll tap where it is', 'g', { h: 56, onClick: () => setSh(null) })}
+        </>, { onClose: () => setSh(null), label: 'Where is the damage?' });
+      })() : null}
       {sh?.k === 'delPhoto' && selPin ? (() => {
         const ph = dPhotos(selPin.id).find((x) => x.id === sh.id);
         if (!ph) return null;
@@ -499,7 +526,7 @@ export default function DamageStep() {
       return (
         <div style={css(LANDSCAPE)}>
           <div style={css('flex:1;display:flex;flex-direction:column;padding:10px 16px 12px;gap:8px;min-width:0')}>
-            {lbar('Mark damage', moving || drag ? 'Hold and drag to move it' : markSub, null, () => { if (moving) setSel(null); else setPhase('ask'); })}
+            {lbar('Mark damage', moving || drag ? 'Drag it to move it' : markSub, null, () => { if (moving) setSel(null); else setPhase('ask'); })}
             {vtabs(view, counts, { onPick: pickView })}
             <div style={css('position:relative;flex:1;display:flex;align-items:center')}>
               {theBoard(false)}

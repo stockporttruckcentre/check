@@ -211,3 +211,37 @@ export function subjectFor(c: Check, config: Config) {
 /* From the business: a check in of a trailer the stock sheet still has with the supplier is its delivery, said as good news. */
 export const DELIVERY_TITLE = 'Taking delivery from the supplier';
 export const DELIVERY_BODY = 'The stock sheet has this trailer with the supplier. This check in records it arriving with us.';
+
+/* ---------------- Damage placed from the checklist ---------------- */
+
+/** Where a general item sits on the trailer drawings, for items that are always in the same place,
+    from the business: answering Damaged puts the mark there, asking first which side, or which
+    left or right at the rear, where it could be either. Points are on the 640 by 220 drawings
+    (nearside; the offside is its mirror) and land on the part as drawn. Items that move about
+    (plates, lights and markers along the side, anything inside) are not here: the person taps. */
+export type ItemPlace =
+  | { ask: 'side'; x: number; y: number; name: string }
+  | { ask: 'leftright'; view: 'rear' | 'front'; left: [number, number]; right: [number, number]; name: [string, string] }
+  | { ask: null; view: 'rear' | 'front'; x: number; y: number; name: string };
+export const ITEM_PLACES: Record<string, ItemPlace> = {
+  sideguards: { ask: 'side', x: 0.5, y: 0.786, name: 'sideguard' },
+  mud_wings_flaps: { ask: 'side', x: 0.84, y: 0.75, name: 'mud wings' },
+  landing_gear: { ask: 'side', x: 0.234, y: 0.8, name: 'landing gear' },
+  chassis: { ask: 'side', x: 0.5, y: 0.7, name: 'chassis' },
+  body_curtains: { ask: 'side', x: 0.5, y: 0.35, name: 'body / curtains' },
+  rear_lights: { ask: 'leftright', view: 'rear', left: [0.418, 0.705], right: [0.581, 0.705], name: ['left lamp', 'right lamp'] },
+  rear_doors: { ask: 'leftright', view: 'rear', left: [0.457, 0.39], right: [0.543, 0.39], name: ['left door', 'right door'] },
+  rear_under_run: { ask: null, view: 'rear', x: 0.5, y: 0.82, name: 'under run' },
+  tail_lift: { ask: null, view: 'rear', x: 0.5, y: 0.74, name: 'tail lift' },
+  couplings: { ask: null, view: 'front', x: 0.5, y: 0.8, name: 'couplings' },
+  din_plugs: { ask: null, view: 'front', x: 0.5, y: 0.8, name: 'DIN plugs' },
+  king_pin_plate: { ask: null, view: 'front', x: 0.5, y: 0.8, name: 'king pin' },
+  drawbar_coupling: { ask: null, view: 'front', x: 0.5, y: 0.8, name: 'drawbar coupling' },
+};
+/** The place for an item, or null where the person should tap: side places only fit the trailer drawing. */
+export function itemPlace(itemId: string, drawing: string): ItemPlace | null {
+  const p = ITEM_PLACES[itemId];
+  if (!p) return null;
+  if (p.ask === 'side' && drawing !== 'trailer') return null;
+  return p;
+}
