@@ -99,6 +99,8 @@ export const DEFAULT_CONFIG: Config = {
     rear: [
       { name: 'left lamp', x0: 0.395, y0: 0.62, x1: 0.445, y1: 0.78 },
       { name: 'right lamp', x0: 0.555, y0: 0.62, x1: 0.605, y1: 0.78 },
+      { name: 'left wheels', x0: 0.39, y0: 0.78, x1: 0.45, y1: 1 },
+      { name: 'right wheels', x0: 0.55, y0: 0.78, x1: 0.61, y1: 1 },
       { name: 'under run', x0: 0.395, y0: 0.78, x1: 0.605, y1: 1 },
       { name: 'left door', x0: 0.335, y0: 0, x1: 0.5, y1: 0.62 },
       { name: 'right door', x0: 0.5, y0: 0, x1: 0.665, y1: 0.62 },
