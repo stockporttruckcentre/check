@@ -18,15 +18,50 @@ export function useSession() { return useSyncExternalStore((f) => { subs.add(f);
 export function perms(): Perms { return state.user?.perms || NO_PERMS; }
 
 /* Keep the current person's refreshed tokens on the phone. */
+/* Saved even while the phone is locked: the client keeps refreshing in the background, and an old
+   token handed back to Supabase on unlock counts as reuse and cancels the sign in. */
 supabase.auth.onAuthStateChange(async (ev, s) => {
-  const u = state.user;
-  if (!u || !s || s.user.id !== u.userId) return;
-  if (ev === 'TOKEN_REFRESHED' || ev === 'SIGNED_IN') {
-    const next = { ...u, session: { access_token: s.access_token, refresh_token: s.refresh_token } };
-    await db.users.put(next);
-    if (state.user?.personId === u.personId) set({ user: next });
-  }
+  if (!s || (ev !== 'TOKEN_REFRESHED' && ev !== 'SIGNED_IN')) return;
+  const u = (await db.users.toArray()).find((x) => x.userId === s.user.id);
+  if (!u) return;
+  const next = { ...u, session: { access_token: s.access_token, refresh_token: s.refresh_token } };
+  await db.users.put(next);
+  if (state.user?.personId === u.personId) set({ user: { ...state.user, session: next.session } });
 });
+
+/** True when the server still accepts this person's sign in. With no sign in, the server answers
+    every read with nothing, which must never be taken as "the stock sheet is empty". */
+export async function liveSession(): Promise<boolean> {
+  /* Opening the app, the sign in is still being handed to the client for a moment: wait for it. */
+  for (let i = 0; i < 20; i++) {
+    const u = state.user;
+    if (!u || !u.session) return false;
+    const { data } = await supabase.auth.getSession();
+    if (data.session && data.session.user.id === u.userId) return true;
+    await new Promise((r) => setTimeout(r, 500));
+  }
+  return false;
+}
+/** Sync pulls again the moment a sign in is live. */
+const liveSubs = new Set<() => void>();
+export function onLive(f: () => void) { liveSubs.add(f); }
+
+/** The server refused the sign in: the person keeps their PIN and work, and signs in with email once. */
+export async function sessionLost() {
+  const u = state.user;
+  if (!u || !u.session) return;
+  const next = { ...u, session: null };
+  await db.users.put(next);
+  set({ user: next });
+}
+/** "Sign in again" on Home: sends the code to the person's own email. */
+export async function signInAgain(): Promise<string | null> {
+  const u = state.user;
+  if (!u) return null;
+  const err = await sendCode(u.email);
+  if (!err) await lockPhone();
+  return err;
+}
 
 export async function startSession() {
   if (await linkSignIn()) { set({ ready: true }); return; }
@@ -89,6 +124,14 @@ async function finishSignIn(s: { access_token: string; refresh_token: string; us
     session: { access_token: s.access_token, refresh_token: s.refresh_token },
     pinHash: null, pinSalt: null, pinSetAt: null, lastUsed: new Date().toISOString(), fails: 0, lockedUntil: null,
   };
+  /* Signing in again after the sign in ran out keeps the PIN they already chose. */
+  const had = await db.users.get(u.personId);
+  if (had?.pinHash && !(d.person.pin_reset_at && (!had.pinSetAt || (d.person.pin_reset_at as string) > had.pinSetAt))) {
+    const back = { ...u, pinHash: had.pinHash, pinSalt: had.pinSalt, pinSetAt: had.pinSetAt };
+    set({ pendingEmail: null });
+    await activate(back);
+    return null;
+  }
   await db.users.put(u);
   set({ pendingEmail: null, needPin: u });
   return null;
@@ -150,10 +193,13 @@ async function activate(u: DeviceUser) {
   await kvSet('unlocked', { personId: u.personId, at: Date.now() });
   set({ user: next });
   if (u.session && navigator.onLine) {
-    const r = await supabase.auth.setSession(u.session);
+    /* The client may already hold a newer token for this person than the one saved: use that. */
+    const held = (await supabase.auth.getSession()).data.session;
+    const r = held && held.user.id === u.userId ? { data: { session: held }, error: null } : await supabase.auth.setSession(u.session);
     if (!r.error && r.data.session) {
       next.session = { access_token: r.data.session.access_token, refresh_token: r.data.session.refresh_token };
       await refreshMe(next);
+      liveSubs.forEach((f) => f());
     } else if (r.error && /refresh token|invalid/i.test(r.error.message)) {
       /* The office removed them, or their session ran out: they sign in with email again. */
       await db.users.put({ ...next, session: null });

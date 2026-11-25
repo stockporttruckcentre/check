@@ -20,6 +20,12 @@ export function when(d: Date | string | null | undefined, withTime = true): stri
   if (now.getTime() - x.getTime() < 6 * 864e5) return DAY[x.getDay()];
   return dayMon(x);
 }
+/** "Started 09:41" on the day, "Started 24 Nov" after it, with the year once it is another year. */
+export function started(d: Date | string): string {
+  const x = new Date(d), now = new Date();
+  if (sameDay(x, now)) return time(x);
+  return x.getFullYear() === now.getFullYear() ? dayMon(x) : dayMonYear(x);
+}
 export function lastUsed(d: Date | string | null | undefined): string {
   if (!d) return '';
   const x = new Date(d), now = new Date();
